@@ -44,7 +44,7 @@ pip install trust-bo
 
 > **Note:** The package is currently in active development. For the latest version, build from source:
 > ```bash
-> git clone https://github.com/saku0322/TRust-BO
+> git clone https://github.com/K092203/TRust-BO
 > cd TRust-BO
 > pip install maturin
 > maturin develop --release

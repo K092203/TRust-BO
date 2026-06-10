@@ -4,7 +4,7 @@ Thank you for your interest! This is a one-person project so far — any help is
 
 ## Bug reports & feature requests
 
-Please open an [Issue](https://github.com/saku0322/TRust-BO/issues). Include your OS, Python version, and a minimal reproduction if possible.
+Please open an [Issue](https://github.com/K092203/TRust-BO/issues). Include your OS, Python version, and a minimal reproduction if possible.
 
 ## Pull requests
 
