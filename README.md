@@ -2,8 +2,8 @@
 
 **Bayesian optimization that runs on the hardware you already have.**
 
+[![CI](https://github.com/K092203/TRust-BO/actions/workflows/ci.yml/badge.svg)](https://github.com/K092203/TRust-BO/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-83%20passed-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue)]()
 [![Rust](https://img.shields.io/badge/built%20with-Rust-orange)]()
 
@@ -38,17 +38,16 @@ No GPU required. No cloud required. Just `pip install` and go.
 
 ## Installation
 
+TRust-BO is not on PyPI yet (it's on the roadmap). Build from source — all you need is a [Rust toolchain](https://rustup.rs/) and `pip`:
+
 ```bash
-pip install trust-bo
+git clone https://github.com/K092203/TRust-BO
+cd TRust-BO
+python -m venv .venv && source .venv/bin/activate
+pip install .
 ```
 
-> **Note:** The package is currently in active development. For the latest version, build from source:
-> ```bash
-> git clone https://github.com/K092203/TRust-BO
-> cd TRust-BO
-> pip install maturin
-> maturin develop --release
-> ```
+For development, use [maturin](https://github.com/PyO3/maturin) for fast rebuilds: `pip install maturin && maturin develop --release`.
 
 ---
 
@@ -91,6 +90,18 @@ engine.tell(candidates, [
 ```python
 engine.save("study.zip")
 engine = TRustBOEngine.load("study.zip")
+```
+
+### Optuna integration
+
+Use TRust-BO as a drop-in [Optuna](https://optuna.org/) sampler:
+
+```python
+import optuna
+from trust_bo.integrations.optuna import TrustBoOptunaSampler
+
+study = optuna.create_study(sampler=TrustBoOptunaSampler(seed=42))
+study.optimize(objective, n_trials=100)
 ```
 
 ---
@@ -163,7 +174,7 @@ Key design choices:
 - [x] Single Trust Region (exploitation-focused)
 - [x] MLP Bootstrap Ensemble surrogate with warm start
 - [x] Constraint handling (feasibility surrogate)
-- [x] 47-test suite, CPU-only, PyO3 Python bindings
+- [x] 83-test suite (71 Python + 12 Rust), CPU-only, PyO3 Python bindings
 - [x] Benchmark vs BoTorch / HEBO / Random (Setting A/B complete)
 - [x] OSS release prep — MIT license, class name unified, known limitations documented
 - [x] Native Phase 2 (Rust Tandem Residual-GP): +32% at 50D, +55% at 10D, zero extra deps
@@ -184,6 +195,12 @@ Key design choices:
 - **Warm-start weight transfer:** Surrogate weights are serialized as hex strings (~1 MB/round) between optimization rounds. This is functional but inefficient; a binary transfer mechanism is planned.
 - **Single-objective only:** Multi-objective optimization (Pareto front) is not yet supported.
 - **Multi-TR (`n_trs > 1`) is experimental:** Implemented and tested, but deprioritized for CFD-scale budgets where single-TR is more stable.
+
+---
+
+## Development log
+
+The full development history — design decisions, phase-by-phase experiments, and benchmark notes — is kept in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) (Japanese).
 
 ---
 

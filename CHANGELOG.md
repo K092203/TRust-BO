@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.1.0] - 2026-06-11
+## [Unreleased]
 
 ### Added
 
@@ -19,7 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **CFD-oriented examples**: NACA airfoil and F1 wing optimization pipelines
   with a mock CFD solver, drop-in replaceable with real OpenFOAM runs.
 - **Save/resume**: `engine.save("study.zip")` / `TRustBOEngine.load(...)`.
-- 71 tests passing (Python + Rust), CPU-only.
+- 83 tests passing (71 Python + 12 Rust), CPU-only.
 
 ### Deprecated
 

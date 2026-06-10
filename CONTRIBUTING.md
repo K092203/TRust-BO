@@ -15,10 +15,13 @@ PRs are welcome. Start small — a typo fix or a single bug fix is a great first
 3. **Add tests** — `pytest` for Python-facing behavior, `cargo test` for Rust internals
 4. Make sure everything passes:
    ```bash
+   pip install maturin numpy pytest scipy scikit-learn
    cargo test --release
    maturin develop --release
    pytest tests/ -q
    ```
+   (`scipy` / `scikit-learn` are only needed while the deprecated
+   `TandemEngine` is still bundled — it will be removed in v0.2.)
 
 ## Code style
 

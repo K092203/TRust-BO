@@ -2,13 +2,20 @@
 name = "trust-bo"
 version = "0.1.0"
 edition = "2021"
+description = "Trust Region Bayesian Optimization engine (TuRBO-style) with a CPU-only Rust core, exposed to Python via PyO3"
+license = "MIT"
+repository = "https://github.com/K092203/TRust-BO"
+authors = ["Kotaro Ozawa"]
 
 [lib]
 name = "trust_bo"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3       = { version = "0.22", features = ["extension-module", "abi3-py39"] }
+# pyo3/extension-module is enabled by maturin (see [tool.maturin] in
+# pyproject.toml), not here — having it on by default breaks `cargo test`
+# linking: https://pyo3.rs/latest/faq#i-cant-run-cargo-test
+pyo3       = { version = "0.22", features = ["abi3-py39"] }
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 rand       = { version = "0.8", features = ["std_rng"] }

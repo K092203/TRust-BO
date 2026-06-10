@@ -5,8 +5,35 @@ build-backend = "maturin"
 [project]
 name = "trust-bo"
 version = "0.1.0"
+description = "CPU-only Trust Region Bayesian Optimization (TuRBO-style) with a Rust core, built for CFD-scale budgets"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Kotaro Ozawa" }]
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.21"]
+keywords = [
+    "bayesian-optimization",
+    "trust-region",
+    "turbo",
+    "optimization",
+    "cfd",
+    "rust",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.urls]
+Homepage = "https://github.com/K092203/TRust-BO"
+Repository = "https://github.com/K092203/TRust-BO"
+Issues = "https://github.com/K092203/TRust-BO/issues"
+Changelog = "https://github.com/K092203/TRust-BO/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # 旧 sklearn ベース TandemEngine/V2 用 (deprecated、v0.2 で削除予定)

@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -28,11 +29,15 @@ jobs:
       - name: Rust tests
         run: cargo test --release
 
+      # scipy / scikit-learn are required to import trust_bo while the
+      # deprecated TandemEngine (legacy-tandem extra) is still bundled
       - name: Install Python deps
-        run: pip install maturin numpy pytest
+        run: pip install pytest scipy scikit-learn
 
-      - name: Build extension
-        run: maturin develop --release
+      # `maturin develop` requires a virtualenv; `pip install .` builds the
+      # same wheel via the maturin build backend and works anywhere
+      - name: Build and install package
+        run: pip install .
 
       - name: Python tests
         run: pytest tests/ -q

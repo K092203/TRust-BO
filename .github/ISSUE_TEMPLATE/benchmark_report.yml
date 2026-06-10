@@ -1,0 +1,25 @@
+name: Benchmark / real-world result
+description: Share results from using TRust-BO on a real problem (good or bad!)
+labels: [benchmark]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem description
+      description: What did you optimize? Dimensions, budget, constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: Best value found, wall-clock time, comparison with other tools if any.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "Ubuntu 24.04, Python 3.11, laptop CPU (no GPU)"
+    validations:
+      required: false
