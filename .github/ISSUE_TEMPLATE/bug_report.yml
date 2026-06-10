@@ -1,0 +1,34 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest script that reproduces the problem.
+      render: python
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: TRust-BO version / commit
+      placeholder: "0.1.0 / abc1234"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Rust version (if building from source).
+      placeholder: "Ubuntu 24.04, Python 3.11, rustc 1.85"
+    validations:
+      required: true
