@@ -1,0 +1,25 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "trust-bo"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+# 旧 sklearn ベース TandemEngine/V2 用 (deprecated、v0.2 で削除予定)
+legacy-tandem = ["scikit-learn", "scipy"]
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "trust_bo._lib"
+features = ["pyo3/extension-module"]
+python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "eval: long-running evaluation tests (run with -m eval)",
+]

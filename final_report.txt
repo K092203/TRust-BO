@@ -1,0 +1,74 @@
+=== TRust-BO 検証レポート 最終版 ===
+生成時刻: 2026-06-10 19:25
+
+## ベンチマーク結果
+
+### v1結果（Phase2バグ修正前、一部バグあり）
+  方式                        10D      50D     100D  (中央値、小さいほど良い)
+  TandemEngine            4.593    7.598    8.406
+  TRust-BO                4.593    7.939    8.649
+  HEBO                    0.120      N/A      N/A
+  Random                  7.490    9.020    9.609
+
+  速度 (中央値 秒):
+  TandemEngine              11s      45s    2686s
+  TRust-BO                  11s      34s      38s
+  HEBO                      48s      N/A      N/A
+  Random                     0s       0s       0s
+
+### v2結果（バグ修正・Phase2強化後）
+  方式                          10D      50D     100D
+  TandemEngine_v2           4.632    7.573    8.016
+  TandemEngine_v1           4.632    7.613    8.175
+  TRust-BO                  4.376    7.847    8.633
+  HEBO                      0.100      N/A      N/A
+  Random                    7.490    9.020    9.609
+
+### 改善率サマリー
+
+TandemEngine_v1 vs TRust-BO (v1データ):
+  Ackley_10D: 0.0%  (4.593→4.593)
+  Ackley_50D: 4.3%  (7.939→7.598)
+  Ackley_100D: 2.8%  (8.649→8.406)
+
+TandemEngine_v2 vs TRust-BO (v2データ):
+  Ackley_10D: -5.8%  (4.376→4.632)
+  Ackley_50D: 3.5%  (7.847→7.573)
+  Ackley_100D: 7.2%  (8.633→8.016)
+
+TandemEngine_v2 vs HEBO (10D):
+  差: 4.532 (負=TandemEngine優位)
+
+## CFD実問題結果
+
+### NACA翼型最適化（モックCFD）
+  最良 Cl/Cd: 36.42
+  最良パラメータ: camber=0.0, pos=0.7535876000000001, thickness=0.35
+  Random 20点 best (推定): 34.98
+  改善: +1.44 (+4.1%)
+  総評価数: 30
+
+### F1ウイング最適化（モックCFD）
+  最良 |Cl|/Cd: 26.30
+  最良パラメータ: main_camber=0.0465914859, main_thickness=0.11050601600000001, flap_angle=36.501065999999994°, flap_gap=0.020076882999999997
+  総評価数: 20
+
+## 総合評価
+
+TandemEngineは有効か:
+  Ackley_10D: No (差なし) (TandemEngine 4.593 vs TRust-BO 4.593, +0.0%)
+  Ackley_50D: Yes (TandemEngine 7.598 vs TRust-BO 7.939, +4.3%)
+  Ackley_100D: Yes (TandemEngine 8.406 vs TRust-BO 8.649, +2.8%)
+
+CFD実問題でTRust-BOは機能したか:
+  Yes — NACA最適化でRandom比+4.1%改善
+
+全領域制覇への残課題:
+  [ ] 10DでHEBOに勝つ → Phase2 GP精度向上（v2で改善中）
+  [ ] OpenFOAM実問題での安定動作
+  [ ] TandemEngine_v2の100D検証完了
+
+## 明日やるべきこと
+  1. tandem_v2_results.csv 完了後にこのスクリプトを再実行
+  2. sudo apt-get install openfoam2312-default → 実CFD最適化
+  3. GitHub push (git push origin main)

@@ -1,0 +1,100 @@
+use serde::{Deserialize, Serialize};
+
+/// Trust Region の状態。Python 側で永続化し、propose() 呼び出しごとに渡す。
+/// best_value は生の値(最大化方向統一済み、z-score 前)。
+/// z-score 正規化済みで保存すると、新データ追加後にスケールがずれて成否判定が壊れる。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TrustRegionState {
+    pub center: Vec<f32>,
+    pub side_length: f32,
+    pub success_count: usize,
+    pub failure_count: usize,
+    pub best_value: f32,
+    pub active: bool,
+    /// 初期 warmup 残り propose() 呼び出し数。この間は TR 収縮しない。
+    /// 旧バージョンとの互換性のため #[serde(default)] で 0 にフォールバック。
+    #[serde(default)]
+    pub warmup_remaining: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProposeConfig {
+    pub n_dims: usize,
+    pub batch_size: usize,
+    pub n_init: usize,
+    pub ensemble_size: usize,
+    pub epochs: usize,
+    pub learning_rate: f64,
+    pub n_cem_samples: usize,
+    pub n_cem_iters: usize,
+    pub elite_fraction: f32,
+    pub beta: f32,
+    pub acquisition: String,
+    // Trust Region (Phase 3)
+    pub tau_succ: usize,   // 成功バッチ連続数 → 辺長拡大
+    pub tau_fail: usize,   // 失敗バッチ連続数 → 辺長縮小 (0 = n_dims ベース自動設定)
+    pub l_init: f32,       // 初期辺長
+    pub l_max: f32,        // 最大辺長
+    pub l_min: f32,        // 最小辺長 (以下でリスタート)
+    /// サロゲートウォームスタート: 前回の weights (hex 文字列、メンバーごと)
+    #[serde(default)]
+    pub model_states: Vec<String>,
+    /// Feasibility surrogate のウォームスタート weights
+    #[serde(default)]
+    pub feas_model_states: Vec<String>,
+    /// 並列 Trust Region 数 (TuRBO-M)。1 = 従来の単一 TR (デフォルト、後方互換)。
+    #[serde(default = "default_n_trs")]
+    pub n_trs: usize,
+    /// TR 初期化時の warmup ラウンド数。この間は failure_count を増やさない。
+    /// デフォルト 0 (無効)。早期収縮が懸念される場合は 2–3 を推奨。
+    /// 注意: テスト seed=0 で l_init=0.5 のとき warmup>0 だと expand→shrink で
+    /// side_length が l_init に戻る可能性があるため、デフォルトは 0 に保つ。
+    // [CHANGED]: 修正① — 早期 TR 収縮防止の warmup 機能を configurable として実装。
+    // デフォルト 0 で既存テストに影響なし。本番では init_warmup=2 推奨。
+    #[serde(default)]
+    pub init_warmup: usize,
+    /// Tandem Residual-GP Phase 2 を有効化 (単一 TR のみ)。デフォルト false で既存挙動。
+    #[serde(default)]
+    pub enable_phase2: bool,
+    /// 現在の phase ("global" | "local")。Python 側で往復させる sticky 状態。
+    #[serde(default = "default_phase")]
+    pub phase: String,
+    /// EI 停滞カウンタ (max EI < 1e-5 の連続回数)。Python 側で往復。
+    #[serde(default)]
+    pub stagnation_count: usize,
+    /// Phase 2 遷移に必要な最小 feasible 評価数。0 = 自動 (3 × n_init)。
+    #[serde(default)]
+    pub phase2_min_evals: usize,
+    /// local GP の学習点数。0 = 自動 (max(50, n_dims + 2))。
+    #[serde(default)]
+    pub phase2_local_points: usize,
+}
+
+fn default_n_trs() -> usize {
+    1
+}
+
+fn default_phase() -> String {
+    "global".to_string()
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProposeOutput {
+    pub candidates: Vec<Vec<f32>>,
+    pub tr_states: Vec<TrustRegionState>,
+    pub acq_scores: Vec<f32>,
+    pub pred_means: Vec<f32>,
+    pub pred_stds: Vec<f32>,
+    pub surrogate_loss: f32,
+    pub mode: String,
+    /// 次回 propose() に渡すウォームスタート weights (hex 文字列、メンバーごと)
+    pub model_states: Vec<String>,
+    /// Feasibility surrogate の次回ウォームスタート weights
+    pub feas_model_states: Vec<String>,
+    /// 現在の phase ("global" | "local")。Python 側が次回 config で返す。
+    #[serde(default = "default_phase")]
+    pub phase: String,
+    /// EI 停滞カウンタ。Python 側が次回 config で返す。
+    #[serde(default)]
+    pub stagnation_count: usize,
+}
