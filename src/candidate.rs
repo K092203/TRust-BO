@@ -2,7 +2,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 /// Latin Hypercube Sampling: n_samples 点を [0,1]^n_dims に配置。
-#[allow(dead_code)]
+/// Halton が対応しない高次元 (n_dims > PRIMES.len()) の cold-start でも使う。
 pub fn lhs(n_samples: usize, n_dims: usize, seed: u64) -> Vec<Vec<f32>> {
     if n_samples == 0 || n_dims == 0 {
         return vec![];
@@ -57,7 +57,11 @@ pub fn halton(n_samples: usize, n_dims: usize, seed: u64) -> Vec<Vec<f32>> {
     if n_samples == 0 || n_dims == 0 {
         return vec![];
     }
-    assert!(n_dims <= PRIMES.len(), "n_dims {} exceeds Halton max {}", n_dims, PRIMES.len());
+    // 高次元では高素数基底の Halton 列が次元間相関を生むため、
+    // 素数テーブルを超える次元数では LHS にフォールバックする（panic しない）。
+    if n_dims > PRIMES.len() {
+        return lhs(n_samples, n_dims, seed);
+    }
 
     // 次元ごとに固定オフセット (additive scramble) を生成
     let mut rng = StdRng::seed_from_u64(seed);
@@ -108,5 +112,17 @@ mod tests {
         let pts = halton(50, 50, 7);
         assert_eq!(pts.len(), 50);
         assert_eq!(pts[0].len(), 50);
+    }
+    /// PRIMES テーブル(128)を超える次元でも panic せず LHS にフォールバックする
+    #[test]
+    fn halton_above_prime_table_falls_back() {
+        let pts = halton(60, 200, 3);
+        assert_eq!(pts.len(), 60);
+        assert_eq!(pts[0].len(), 200);
+        for v in pts.iter().flatten() {
+            assert!(*v >= 0.0 && *v <= 1.0, "value {v} out of [0,1]");
+        }
+        // 同 seed なら再現
+        assert_eq!(pts, halton(60, 200, 3));
     }
 }
