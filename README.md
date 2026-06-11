@@ -2,6 +2,9 @@
 
 **Bayesian optimization that runs on the hardware you already have.**
 
+> **TRust-BO is not a CFD solver.** It sits in the optimization loop — it does not
+> replace the CFD solver; it reduces the number of CFD runs needed during design search.
+
 [![CI](https://github.com/K092203/TRust-BO/actions/workflows/ci.yml/badge.svg)](https://github.com/K092203/TRust-BO/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-blue)]()
@@ -18,7 +21,8 @@ TRust-BO was built by a high school student to solve a concrete problem: optimiz
 The goal is to make Bayesian optimization fast enough to run anywhere, simple enough to use without a PhD, and accurate enough to matter in real engineering work.
 
 TRust-BO is a **Trust Region Bayesian Optimization engine** written in Rust, exposed to Python via PyO3.
-No GPU required. No cloud required. Just `pip install` and go.
+No GPU required. No cloud required. Build from source and run locally.
+PyPI release is planned after real CFD validation.
 
 ---
 
@@ -27,12 +31,14 @@ No GPU required. No cloud required. Just `pip install` and go.
 | Feature | **TRust-BO** | BoTorch | HEBO | Optuna |
 |---|:---:|:---:|:---:|:---:|
 | GPU required | ✗ | optional | ✗ | ✗ |
-| CPU-optimized core | ✓ (Rust) | ✗ (Python/PyTorch) | ✗ | ✗ |
-| High-dimensional (50D+) | ✓ (Trust Region) | ✓ (TuRBO extension) | △ | △ |
-| API complexity | minimal | high | moderate | minimal |
-| Designed for CFD workflows | ✓ | ✗ | ✗ | ✗ |
+| CPU-optimized core | ✓ (Rust) | △ | △ | ✓ |
+| High-dimensional (50D+) | ✓ | ✓ | △ | △ |
+| Minimal ask/tell API | ✓ | △ | △ | ✓ |
+| CFD workflow focus | ✓ | ✗ | ✗ | ✗ |
 
-*BoTorch is excellent and production-grade; TRust-BO trades flexibility for simplicity and zero GPU dependency.*
+> BoTorch and Optuna can also be used for CFD-driven optimization. TRust-BO is
+> specifically designed around a lightweight, CPU-first workflow for students and
+> small engineering teams.
 
 ---
 
@@ -92,22 +98,29 @@ engine.save("study.zip")
 engine = TRustBOEngine.load("study.zip")
 ```
 
-### Optuna integration
+### Use as an Optuna sampler
 
-Use TRust-BO as a drop-in [Optuna](https://optuna.org/) sampler:
+Use TRust-BO as a drop-in [Optuna](https://optuna.org/) sampler. Requires `pip install optuna`.
 
 ```python
 import optuna
 from trust_bo.integrations.optuna import TrustBoOptunaSampler
 
-study = optuna.create_study(sampler=TrustBoOptunaSampler(seed=42))
+study = optuna.create_study(direction="minimize", sampler=TrustBoOptunaSampler(seed=42))
+
+def objective(trial):
+    x = [trial.suggest_float(f"x{i}", -5.0, 5.0) for i in range(10)]
+    return sum(v**2 for v in x)
+
 study.optimize(objective, n_trials=100)
+print(study.best_value)
 ```
 
 ---
 
-## Benchmark
+## Benchmark (synthetic)
 
+Synthetic benchmark functions; real CFD validation is the next milestone.
 All results on Ackley minimization, 5 seeds (0–4), batch=4.
 Lower is better. `—` = too slow to run (>3 min/trial).
 
@@ -170,7 +183,7 @@ Key design choices:
 
 ## Roadmap
 
-### Current (high school phase)
+### Current (v0.1.x)
 - [x] Single Trust Region (exploitation-focused)
 - [x] MLP Bootstrap Ensemble surrogate with warm start
 - [x] Constraint handling (feasibility surrogate)
@@ -179,13 +192,41 @@ Key design choices:
 - [x] OSS release prep — MIT license, class name unified, known limitations documented
 - [x] Native Phase 2 (Rust Tandem Residual-GP): +32% at 50D, +55% at 10D, zero extra deps
 - [x] Mock CFD pipeline (NACA / F1 wing) — drop-in ready for real OpenFOAM
+- [x] Optuna sampler integration
 - [ ] Multi-TR (TuRBO-M) — deprioritized; single TR outperforms on CFD-scale budgets
 - [ ] OpenFOAM integration + real airfoil optimization
 - [ ] PyPI release
 
-### After starting university
+### Planned
 - [ ] Research paper on lightweight BO for engineering design
 - [ ] End-to-end aerodynamics optimization pipeline (OpenFOAM / SU2)
+
+---
+
+## FAQ
+
+### Is TRust-BO a CFD solver?
+No. TRust-BO is an optimizer that works *with* external CFD solvers. It does not
+solve Navier-Stokes equations. It decides which design candidates to evaluate next,
+reducing the total number of expensive CFD runs.
+
+### Why not just use BoTorch?
+BoTorch is excellent and much more flexible. TRust-BO is not a replacement — it is a
+smaller CPU-first engine with a simple ask/tell API, designed around lightweight
+CFD-driven workflows for students and small teams.
+
+### Has it been validated on real CFD?
+Not yet. Synthetic benchmarks and a mock CFD pipeline are complete. Real OpenFOAM/SU2
+validation is the next milestone.
+
+### Who is this for?
+Students, Formula Student teams, and small engineering teams interested in CFD-driven
+design optimization without HPC or GPUs.
+
+### What is the relationship to BoTorch / HEBO / Optuna?
+These are all excellent optimizers. TRust-BO does not aim to replace them. It focuses
+on a specific gap: a CPU-only, lightweight optimizer packaged around CFD-driven
+engineering design workflows.
 
 ---
 
@@ -211,6 +252,21 @@ Contributions are welcome. This is a one-person project so far, and any help —
 If you use TRust-BO for a CFD problem and get results (good or bad), please open an issue and share them. Real-world feedback is the most valuable thing at this stage.
 
 ---
+
+<!--
+GitHub Topics to set manually in repository settings:
+bayesian-optimization
+cfd
+aerodynamics
+engineering-design
+rust
+python
+pyo3
+trust-region
+optimization
+formula-student
+black-box-optimization
+-->
 
 ## License
 
