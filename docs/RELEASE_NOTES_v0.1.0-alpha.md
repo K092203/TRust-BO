@@ -11,7 +11,7 @@
 - Constraint handling (feasibility surrogate)
 - Optuna sampler integration (TrustBoOptunaSampler)
 - Save/load
-- 71 tests passing
+- 83 tests passing (71 Python + 12 Rust)
 - Benchmarks vs Random/BoTorch/HEBO on synthetic functions
 - Mock CFD pipeline (NACA airfoil / F1 wing style)
 
