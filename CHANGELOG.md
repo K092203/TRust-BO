@@ -16,10 +16,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refinement. Enabled with `config={"enable_phase2": True}`. No sklearn needed.
   +32% over plain TRust-BO at 50D, +55% at 10D (Ackley, 3-seed median).
 - **Constraint handling** via a feasibility surrogate (EI × P(feasible)).
-- **CFD-oriented examples**: NACA airfoil and F1 wing optimization pipelines
-  with a mock CFD solver, drop-in replaceable with real OpenFOAM runs.
+- **Async parallel / rolling evaluation** (`RollingTRustBOEngine`, SLURM-ready)
+  for expensive solvers where evaluations take minutes to hours.
+- **Multi-objective optimization** (`MultiObjectiveEngine`): Chebyshev scalarization
+  (any number of objectives) and a closed-form 2-objective Expected Hypervolume
+  Improvement (EHVI) implemented in Rust. Exposes `pareto_front()` / `hypervolume()`.
+- **Real CFD airfoil pipelines**: NeuralFoil (H-1, learned surrogate) and
+  SU2 RANS (H-2, real steady Navier-Stokes, Ma=0.3 Re=3e6 SA). Multi-objective
+  Cl/Cd optimization validated on SU2 (K-2-8).
 - **Save/resume**: `engine.save("study.zip")` / `TRustBOEngine.load(...)`.
-- 83 tests passing (71 Python + 12 Rust), CPU-only.
+- **Optuna sampler** integration (`trust_bo.integrations.optuna`).
+- 91 tests passing (63 Python + 28 Rust), CPU-only.
 
 ### Deprecated
 

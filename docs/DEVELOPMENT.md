@@ -14,6 +14,7 @@
 5. [性能実績](#5-性能実績)
 6. [既知の課題](#6-既知の課題)
 7. [今後の開発ロードマップ](#7-今後の開発ロードマップ)
+8. [ベンチマーク実行環境（WSL / 長時間実行）](#8-ベンチマーク実行環境wsl--長時間実行)
 
 ---
 
@@ -1054,3 +1055,60 @@ def tr_state(self) -> dict | None:
 | 2026-06-09 | Phase 10: 比較ベンチマーク v1 完了。TRust-BO vs HEBO vs Random (budget=200, 5 seeds)。BoTorch は API エラーで除外。プロジェクト名を TRM Engine → TRust-BO にリネーム |
 | 2026-06-09 | Phase 11: ベンチマーク v2 完了。Setting A (50D/100D, budget=500) + Setting B (10D/50D, budget=50)、全4手法。100D で TRust-BO 唯一完走 (35s)。BoTorch/HEBO は budget=500 で too_slow |
 | 2026-06-09 | Phase 12: OSS公開準備完了。TRustBOEngine リネーム・LICENSE 追加・Multi-TR テスト4本追加（計47テスト）・README Known Limitations 追加・ロードマップを OpenFOAM 実問題検証に更新 |
+
+---
+
+## 8. ベンチマーク実行環境（WSL / 長時間実行）
+
+実 CFD（SU2）やクロスオーバー特定など、数時間〜半日かかるベンチを安定して回すための運用メモ。
+
+### 8.1 WSL2 のメモリ設定（OOM クラッシュ対策）
+
+SU2 の並列実行や SAASBO（JAX/NumPyro の MCMC）はメモリを多く使う。既定の WSL2 は
+ホスト RAM の約 50% しか割り当てず、超過すると **WSL ごとクラッシュ**してジョブが全滅する。
+Windows 側で `%UserProfile%\.wslconfig`（例: `C:\Users\<user>\.wslconfig`）を作成・編集する:
+
+```ini
+[wsl2]
+memory=14GB        # ホスト RAM に応じて調整（例: 32GB 機なら 14〜24GB）
+swap=4GB
+[experimental]
+autoMemoryReclaim=gradual   # アイドル時にメモリを徐々に返却
+```
+
+反映には WSL の再起動が必要:
+
+```powershell
+wsl --shutdown   # ← 実行中のジョブ・シェルは全て終了する。事前に停止/保存すること
+```
+
+> ⚠️ **`wsl --shutdown` は実行中のベンチを強制終了する。** ベンチ実行中は設定変更しない。
+> 設定は「ベンチ開始前」または「一区切りついた後」に行う。
+
+SAASBO 等 JAX を使うランナーは、コード側でも事前確保を無効化済み
+（`XLA_PYTHON_CLIENT_PREALLOCATE=false` を `run_saasbo` 内で設定）。
+
+### 8.2 チェックポイント / resume（クラッシュからの自動再開）
+
+全ベンチハーネスは結果 CSV を **1 run ごとに追記** し、再実行時に
+**完了済みの (method, …, seed) をスキップ** する。WSL クラッシュ・手動 kill・
+意図的な一時停止のいずれからでも、**同じコマンドを再実行するだけ**で続きから再開できる。
+
+- 共通ヘルパ: `benchmarks/bench_resume.py`（`resume_or_init` / `is_done`）
+- 対応済み: `cfd_scale` / `large_budget` / `midbudget` / `cfd_neuralfoil` / `su2_cfd` / `su2_mo`
+- 動作: CSV が無ければヘッダを書いて新規開始、有れば完了 key を読んで `[skip]` 表示
+
+```bash
+# 例: 落ちても同じコマンドで再開（完了分は [skip] される）
+.venv/bin/python benchmarks/su2_cfd_benchmark.py     # 途中でクラッシュ
+.venv/bin/python benchmarks/su2_cfd_benchmark.py     # ← 続きから自動再開
+```
+
+### 8.3 デタッチ実行
+
+ターミナルや SSH が切れても継続するよう、長時間ベンチは `nohup ... &` でデタッチ実行する:
+
+```bash
+nohup env BUDGET=100 SEEDS=3 .venv/bin/python benchmarks/su2_cfd_benchmark.py \
+  > /tmp/bench.out 2>&1 &
+```

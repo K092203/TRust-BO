@@ -22,7 +22,17 @@ The goal is to make Bayesian optimization fast enough to run anywhere, simple en
 
 TRust-BO is a **Trust Region Bayesian Optimization engine** written in Rust, exposed to Python via PyO3.
 No GPU required. No cloud required. Build from source and run locally.
-PyPI release is planned after real CFD validation.
+
+**What it does, precisely:** on high-dimensional (≥50D) *or* noisy / constrained problems
+(such as real CFD), TRust-BO runs **5–10× faster than BoTorch TuRBO while reaching equal or
+better quality**. On low-dimensional, smooth, small-budget problems a GP-based method
+(BoTorch, HEBO) is usually a better choice — TRust-BO does not claim to be universally best.
+See [docs/PERFORMANCE_ASSESSMENT.md](docs/PERFORMANCE_ASSESSMENT.md) for the honest, data-backed breakdown.
+
+> **Benchmark scope (read before comparing):** results below are measured against
+> **BoTorch TuRBO, CMA-ES, Random Search, and NSGA-II**. A comparison against **SAASBO**
+> (a strong high-dimensional BO baseline) is **future work**. CFD benchmarks use **3 seeds**
+> and multi-objective uses **2 seeds**; more seeds are planned for statistical rigor.
 
 ---
 
@@ -91,6 +101,29 @@ engine.tell(candidates, [
 ])
 ```
 
+### Multi-objective (Pareto)
+
+Optimize several objectives at once via `MultiObjectiveEngine`. `method="ehvi"` uses a
+closed-form 2-objective Expected Hypervolume Improvement implemented in Rust;
+`method="chebyshev"` uses scalarization (any number of objectives).
+
+```python
+from trust_bo import MultiObjectiveEngine, Float
+
+space = [Float(f"x{i}", 0.0, 1.0) for i in range(20)]
+engine = MultiObjectiveEngine(
+    space=space, directions=["maximize", "minimize"],  # e.g. Cl ↑, Cd ↓
+    method="ehvi", seed=0,
+)
+for _ in range(15):
+    cands = engine.ask(batch_size=4)
+    results = [{"values": [cl(c), cd(c)], "feasible": True} for c in cands]
+    engine.tell(cands, results)
+
+print(engine.pareto_front())                 # non-dominated designs
+print(engine.hypervolume(ref=[0.0, 0.05]))   # quality metric
+```
+
 ### Save and resume
 
 ```python
@@ -118,47 +151,75 @@ print(study.best_value)
 
 ---
 
-## Benchmark (synthetic)
+## Benchmarks
 
-Synthetic benchmark functions; real CFD validation is the next milestone.
-All results on Ackley minimization, 5 seeds (0–4), batch=4.
-Lower is better. `—` = too slow to run (>3 min/trial).
+Full data and methodology: [docs/BENCHMARK.md](docs/BENCHMARK.md) and
+[docs/PERFORMANCE_ASSESSMENT.md](docs/PERFORMANCE_ASSESSMENT.md).
+Compared against **BoTorch TuRBO, CMA-ES, Random Search, NSGA-II**; SAASBO is future work.
 
-### Setting B — CFD-scale budget (budget=50)
+### Synthetic high-dimensional (the strong case)
 
-| Method | Ackley 10D | Ackley 50D | Time / run (50D) |
-|---|:---:|:---:|:---:|
-| HEBO | **4.71** | 9.35 | ~22 s |
-| BoTorch TuRBO-1 | 5.89 | 8.83 | ~11 s |
-| **TRust-BO** | 7.32 | **8.85** | **2.5 s** |
-| Random Search | 7.85 | 9.57 | ~0 s |
+Ackley / Rastrigin / Levy at 50D and 100D, budget 100–500, `enable_phase2=True`.
+Lower is better. Quality = median best over seeds; speed = wall-clock per run.
 
-At 50D with a small budget, TRust-BO matches BoTorch while running **4× faster**.
-At 10D, small-budget GP-based methods have the edge — Trust Region dynamics need more rounds to warm up.
+| Condition | TRust-BO | BoTorch TuRBO | Quality | Speed |
+|---|:---:|:---:|:---:|:---:|
+| Ackley 50D, b=300 | **5.96** | 7.25 | TRust | **8.9×** |
+| Levy 50D, b=300 | **152.4** | 194.5 | TRust | **10.7×** |
+| Ackley 100D, b=300 | **7.13** | 8.51 | TRust | **5.7×** |
+| Levy 100D, b=300 | **284.1** | 723.2 | TRust | **5.7×** |
+| Ackley 50D, b=500 | **4.64** | 6.38 | TRust | — |
 
-### Setting A — large budget (budget=500)
+TRust-BO wins **16 of 18** mid-budget conditions and **5 of 5** at budget=500, while running
+**5–10× faster**. The two losses are Rastrigin at budget=100 (small-budget GP edge).
 
-| Method | Ackley 50D | Time / run (50D) |
+### Real CFD — airfoil shape optimization
+
+**H-1 (NeuralFoil, 16D CST, maximize Cl/Cd, 10 seeds):** clean surrogate, well-posed.
+
+| Method | median Cl/Cd | best |
 |---|:---:|:---:|
-| **TRust-BO + native Phase 2** | **5.07** | **29 s** |
-| BoTorch TuRBO-1 | 6.38 | ~254 s |
-| TandemEngine v2 (sklearn, deprecated) | 7.33 | ~45 s |
-| **TRust-BO** | 7.40 | 53 s |
-| Random Search | 9.02 | ~0 s |
-| HEBO | — | too slow |
+| BoTorch TuRBO | **241.4** | 245.4 |
+| **TRust-BO+P2** | 227.9 | **267.4** |
+| CMA-ES | 223.3 | 265.5 |
+| Random | 148.7 | 161.1 |
 
-**Native Phase 2** (Tandem Residual-GP): a pure-Rust Matern 5/2 micro-GP fits the
-*residuals* of the MLP ensemble near the best point, refining the endgame.
-Enable with one flag — no sklearn, no extra deps:
+At 16D smooth, BoTorch leads on median; TRust-BO reaches the single best design.
+
+**H-2 (SU2 RANS, real Navier-Stokes, 16D, 3 seeds):** noisy, mesh-constrained.
+
+| Method | median Cl/Cd | seeds in physical range |
+|---|:---:|:---:|
+| **TRust-BO+P2** | **171.6** | **3 / 3** |
+| BoTorch TuRBO | 126.1 | 3 / 3 |
+| CMA-ES | 774.6 ⚠ | 1 / 3 |
+| Random | 316.1 ⚠ | 1 / 3 |
+
+On the harder, noisier RANS problem TRust-BO leads (+36%) and is the most stable.
+
+> ⚠ **Note on the SU2 (H-2) example:** the feasibility check is currently simple
+> (`Cd > 0` + mesh validity). Ultra-thin shapes can slip through and produce non-physical
+> Cl/Cd (the ⚠ values above). Geometric constraints (minimum thickness/area) are planned.
+> **For a clean, ready-to-use CFD example, prefer the NeuralFoil (H-1) pipeline.**
+
+### Multi-objective (Cl ↑ and Cd ↓ simultaneously)
+
+EHVI (closed-form 2-objective expected hypervolume improvement, in Rust) vs Chebyshev
+scalarization on SU2 (budget=60, **2 seeds**): EHVI median hypervolume **0.0239 vs 0.0165
+(+45%)**. Chebyshev produces a more diverse Pareto front. See [docs/BENCHMARK.md](docs/BENCHMARK.md).
+
+### Native Phase 2
+
+A pure-Rust Matern 5/2 micro-GP fits the *residuals* of the MLP ensemble near the best
+point, refining the endgame. One flag, no sklearn, no extra deps:
 
 ```python
 engine = TRustBOEngine(space=space, config={"enable_phase2": True})
 ```
 
-Improves on plain TRust-BO by **+32% at 50D** and **+55% at 10D** (3-seed median),
-while also being the fastest method measured.
-
-> **When to use TRust-BO:** high-dimensional problems (50D+), moderate-to-large budget (100–1000), and anywhere wall-clock time per BO round matters — such as CFD workflows where each evaluation already costs hours.
+> **When to use TRust-BO:** high-dimensional (50D+) *or* noisy/constrained problems,
+> moderate-to-large budget (100–1000), and anywhere wall-clock per BO round matters —
+> such as CFD where each evaluation already costs minutes to hours.
 
 ---
 
@@ -187,19 +248,21 @@ Key design choices:
 - [x] Single Trust Region (exploitation-focused)
 - [x] MLP Bootstrap Ensemble surrogate with warm start
 - [x] Constraint handling (feasibility surrogate)
-- [x] 83-test suite (71 Python + 12 Rust), CPU-only, PyO3 Python bindings
-- [x] Benchmark vs BoTorch / HEBO / Random (Setting A/B complete)
-- [x] OSS release prep — MIT license, class name unified, known limitations documented
+- [x] 91-test suite (63 Python + 28 Rust), CPU-only, PyO3 Python bindings
+- [x] Benchmark vs BoTorch TuRBO / CMA-ES / HEBO / Random / NSGA-II
 - [x] Native Phase 2 (Rust Tandem Residual-GP): +32% at 50D, +55% at 10D, zero extra deps
-- [x] Mock CFD pipeline (NACA / F1 wing) — drop-in ready for real OpenFOAM
+- [x] Async parallel / rolling evaluation (SLURM-ready) for expensive solvers
+- [x] Real CFD airfoil optimization — NeuralFoil (H-1) **and** SU2 RANS (H-2) pipelines
+- [x] Multi-objective: Chebyshev scalarization + closed-form 2-objective EHVI (Rust)
 - [x] Optuna sampler integration
-- [ ] Multi-TR (TuRBO-M) — deprioritized; single TR outperforms on CFD-scale budgets
-- [ ] OpenFOAM integration + real airfoil optimization
-- [ ] PyPI release
 
 ### Planned
-- [ ] Research paper on lightweight BO for engineering design
-- [ ] End-to-end aerodynamics optimization pipeline (OpenFOAM / SU2)
+- [ ] SAASBO comparison + more benchmark seeds (statistical rigor)
+- [ ] Geometric shape constraints for CFD (minimum thickness/area)
+- [ ] Multi-objective beyond 2 objectives
+- [ ] Multi-TR (TuRBO-M) — deprioritized; single TR is more stable at CFD-scale budgets
+- [ ] PyPI release
+- [ ] Research write-up on lightweight BO for engineering design
 
 ---
 
@@ -216,8 +279,10 @@ smaller CPU-first engine with a simple ask/tell API, designed around lightweight
 CFD-driven workflows for students and small teams.
 
 ### Has it been validated on real CFD?
-Not yet. Synthetic benchmarks and a mock CFD pipeline are complete. Real OpenFOAM/SU2
-validation is the next milestone.
+Yes, on airfoil shape optimization. Two pipelines are included: **NeuralFoil** (H-1, a fast
+learned aerodynamics surrogate) and **SU2 RANS** (H-2, real steady Navier-Stokes, Ma=0.3,
+Re=3×10⁶, SA turbulence). See the Benchmarks section and [docs/BENCHMARK.md](docs/BENCHMARK.md).
+Validation so far uses 3 seeds for SU2; more seeds and a SAASBO comparison are planned.
 
 ### Who is this for?
 Students, Formula Student teams, and small engineering teams interested in CFD-driven
@@ -232,10 +297,13 @@ engineering design workflows.
 
 ## Known limitations
 
-- **Surrogate accuracy vs GP:** The MLP bootstrap ensemble trades uncertainty calibration for speed. On low-dimensional problems with large budgets, GP-based methods (BoTorch, HEBO) will typically achieve better results. TRust-BO's advantage is speed and scalability to 50D+.
-- **Warm-start weight transfer:** Surrogate weights are serialized as hex strings (~1 MB/round) between optimization rounds. This is functional but inefficient; a binary transfer mechanism is planned.
-- **Single-objective only:** Multi-objective optimization (Pareto front) is not yet supported.
-- **Multi-TR (`n_trs > 1`) is experimental:** Implemented and tested, but deprioritized for CFD-scale budgets where single-TR is more stable.
+- **Surrogate accuracy vs GP:** The MLP bootstrap ensemble trades uncertainty calibration for speed. On low-dimensional, smooth problems with small budgets, GP-based methods (BoTorch, HEBO) typically do better (confirmed on the 16D NeuralFoil benchmark). TRust-BO's advantage is at 50D+ or on noisy/constrained problems.
+- **Benchmark seeds:** synthetic results use 10 seeds, but real CFD (SU2) uses 3 seeds and multi-objective uses 2 seeds — statistically thin. More seeds are planned.
+- **No SAASBO comparison yet:** the strong high-dimensional BO baseline SAASBO has not been benchmarked against (environment constraints). Claims are limited to vs BoTorch TuRBO / CMA-ES / Random / NSGA-II.
+- **CFD feasibility is simplified:** the SU2 (H-2) pipeline checks only `Cd > 0` and mesh validity, so ultra-thin shapes can yield non-physical Cl/Cd. Geometric constraints (minimum thickness/area) are planned. The NeuralFoil (H-1) pipeline does not have this issue.
+- **Multi-objective is 2-objective for EHVI:** the closed-form EHVI is 2-objective; use Chebyshev scalarization for 3+ objectives.
+- **Warm-start weight transfer:** surrogate weights are serialized as hex strings (~1 MB/round). Functional but inefficient; a binary transfer mechanism is planned.
+- **Multi-TR (`n_trs > 1`) is experimental:** implemented and tested, but deprioritized for CFD-scale budgets where single-TR is more stable.
 
 ---
 
