@@ -3,14 +3,16 @@ mod batch;
 mod candidate;
 mod cem;
 mod gp;
+mod hypervolume;
 mod normalize;
+mod pareto;
 mod surrogate;
 mod tr;
 mod types;
 
 use std::cmp::Ordering;
 
-use types::{ProposeConfig, ProposeOutput, TrustRegionState};
+use types::{ProposeConfig, ProposeMoConfig, ProposeMoOutput, ProposeOutput, TrustRegionState};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -539,6 +541,174 @@ impl Engine {
         serde_json::to_string(&output)
             .map_err(|e| PyValueError::new_err(format!("serialization error: {e}")))
     }
+
+    /// 多目的提案 (Phase K-2: 2 目的 EHVI)。すべて最小化空間を前提とする。
+    ///
+    /// `objective_values[i]` は点 i の目的ベクトル (長さ n_obj)。infeasible 点の値は
+    /// 無視される (フロント・学習から除外)。`ref_point` は最小化空間の参照点で、
+    /// 空の場合は観測 nadir + マージンから動的に決める。
+    pub fn propose_mo(
+        &self,
+        params: Vec<Vec<f32>>,
+        objective_values: Vec<Vec<f32>>,
+        feasibility: Vec<bool>,
+        ref_point: Vec<f32>,
+        config_json: String,
+        seed: u64,
+    ) -> PyResult<String> {
+        let config: ProposeMoConfig = serde_json::from_str(&config_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid config_json: {e}")))?;
+
+        if config.n_obj != 2 {
+            return Err(PyValueError::new_err(format!(
+                "propose_mo は現在 2 目的のみ対応 (n_obj={})",
+                config.n_obj
+            )));
+        }
+
+        // feasible 点のみ抽出 (params, 目的ベクトル)
+        let feasible: Vec<(&Vec<f32>, &Vec<f32>)> = params
+            .iter()
+            .zip(objective_values.iter())
+            .zip(feasibility.iter())
+            .filter(|(_, &f)| f)
+            .map(|((p, v), _)| (p, v))
+            .collect();
+
+        if feasible.len() < config.n_init {
+            return cold_start_mo_output(config.batch_size, config.n_dims, seed);
+        }
+
+        let feasible_params: Vec<Vec<f32>> = feasible.iter().map(|(p, _)| (*p).clone()).collect();
+        // 目的ごとの生値ベクトル
+        let obj0: Vec<f32> = feasible.iter().map(|(_, v)| v[0]).collect();
+        let obj1: Vec<f32> = feasible.iter().map(|(_, v)| v[1]).collect();
+
+        // ── 目的ごとに z-score 正規化 + サロゲート学習 ─────────────────────────
+        let (norm0, mean0, std0) = normalize::zscore(&obj0);
+        let (norm1, mean1, std1) = normalize::zscore(&obj1);
+
+        let warm = |k: usize| -> Option<&[String]> {
+            config.model_states.get(k).map(|v| v.as_slice())
+        };
+
+        let (ens0, _, states0) = surrogate::Ensemble::train(
+            &feasible_params, &norm0, config.n_dims, config.ensemble_size,
+            seed, config.epochs, config.learning_rate, warm(0),
+        );
+        let (ens1, _, states1) = surrogate::Ensemble::train(
+            &feasible_params, &norm1, config.n_dims, config.ensemble_size,
+            seed.wrapping_add(0x51_2a_7f), config.epochs, config.learning_rate, warm(1),
+        );
+        let ensembles = [ens0, ens1];
+
+        // ── Pareto フロント (生・最小化空間) ───────────────────────────────────
+        let costs: Vec<Vec<f32>> = (0..feasible_params.len())
+            .map(|i| vec![obj0[i], obj1[i]])
+            .collect();
+        let nd_idx = pareto::nondominated_indices(&costs);
+        let front_raw: Vec<[f64; 2]> = pareto::sorted_front_2d(&costs);
+
+        // ideal / nadir → 動的参照点 (ref_point が空なら自動)
+        let ideal = [
+            front_raw.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min),
+            front_raw.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min),
+        ];
+        let nadir = [
+            front_raw.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max),
+            front_raw.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max),
+        ];
+        let margin = config.ref_margin as f64;
+        let ref_raw: [f64; 2] = if ref_point.len() == 2 {
+            [ref_point[0] as f64, ref_point[1] as f64]
+        } else {
+            [
+                nadir[0] + (margin * (nadir[0] - ideal[0])).max(1e-3),
+                nadir[1] + (margin * (nadir[1] - ideal[1])).max(1e-3),
+            ]
+        };
+
+        // 正規化空間へ変換 (単調変換ゆえ昇順 x は保たれるが、安全のため再ソート)
+        let to_norm = |p: [f64; 2]| -> [f64; 2] {
+            [
+                (p[0] - mean0 as f64) / std0 as f64,
+                (p[1] - mean1 as f64) / std1 as f64,
+            ]
+        };
+        let mut front_norm: Vec<[f64; 2]> = front_raw.iter().map(|&p| to_norm(p)).collect();
+        front_norm.sort_by(|a, b| a[0].partial_cmp(&b[0]).unwrap_or(Ordering::Equal));
+        let ref_norm = to_norm(ref_raw);
+
+        // ── CEM スタート点: Pareto 点 (フロント沿い分散) + 中心 (探索) ──────────
+        let mut starts: Vec<Vec<f32>> = Vec::new();
+        let n_front_starts = config.n_cem_starts.saturating_sub(1).max(1);
+        for &i in nd_idx.iter().take(n_front_starts) {
+            starts.push(feasible_params[i].clone());
+        }
+        starts.push(vec![0.5f32; config.n_dims]);
+
+        // ── 各スタートで EHVI-CEM → プール集約 ─────────────────────────────────
+        let mut pool: Vec<Vec<f32>> = Vec::new();
+        for (s, start_mu) in starts.iter().enumerate() {
+            let elites = cem::cem_pool_ehvi(
+                &ensembles,
+                config.n_dims,
+                start_mu,
+                config.sigma_init,
+                &front_norm,
+                ref_norm,
+                &config,
+                seed.wrapping_add(1 + s as u64 * 0x9e3779b9),
+            );
+            pool.extend(elites);
+        }
+
+        // ── EHVI スコア + 多様性付き Greedy 選択 ───────────────────────────────
+        let mut acq = cem::ehvi_scores(&ensembles, &pool, config.n_dims, &front_norm, ref_norm);
+        for s in acq.iter_mut() {
+            if !s.is_finite() {
+                *s = f32::MIN;
+            }
+        }
+        let selected = batch::greedy_select(&pool, &acq, config.batch_size, 0.1);
+
+        let mut candidates: Vec<Vec<f32>> = selected.iter().map(|&i| pool[i].clone()).collect();
+        let mut ehvi_scores: Vec<f32> = selected.iter().map(|&i| acq[i]).collect();
+
+        // 不足分を一様乱数で backfill (batch_size 件保証)
+        let mut bf_rng = StdRng::seed_from_u64(seed.wrapping_add(0xb0f3));
+        while candidates.len() < config.batch_size {
+            candidates.push((0..config.n_dims).map(|_| bf_rng.gen::<f32>()).collect());
+            ehvi_scores.push(0.0);
+        }
+
+        let hv = hypervolume::hypervolume_2d(&front_raw, ref_raw) as f32;
+        let output = ProposeMoOutput {
+            candidates,
+            ehvi_scores,
+            model_states: vec![states0, states1],
+            pareto_size: nd_idx.len(),
+            hypervolume: hv,
+            mode: "ehvi_cem".to_string(),
+        };
+        serde_json::to_string(&output)
+            .map_err(|e| PyValueError::new_err(format!("serialization error: {e}")))
+    }
+}
+
+fn cold_start_mo_output(batch_size: usize, n_dims: usize, seed: u64) -> PyResult<String> {
+    let candidates = candidate::halton(batch_size, n_dims, seed);
+    let n = candidates.len();
+    let output = ProposeMoOutput {
+        candidates,
+        ehvi_scores: vec![0.0; n],
+        model_states: vec![],
+        pareto_size: 0,
+        hypervolume: 0.0,
+        mode: "cold_start".to_string(),
+    };
+    serde_json::to_string(&output)
+        .map_err(|e| PyValueError::new_err(format!("serialization error: {e}")))
 }
 
 fn cold_start_output(batch_size: usize, n_dims: usize, seed: u64) -> PyResult<String> {

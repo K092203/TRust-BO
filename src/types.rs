@@ -78,6 +78,58 @@ fn default_phase() -> String {
     "global".to_string()
 }
 
+// ── 多目的 (Phase K-2: EHVI) ───────────────────────────────────────────────────
+
+/// 多目的 propose_mo 用の設定。すべて最小化空間を前提とする
+/// (最大化目的は Python 側で符号反転して渡す)。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProposeMoConfig {
+    pub n_dims: usize,
+    pub n_obj: usize,
+    pub batch_size: usize,
+    pub n_init: usize,
+    pub ensemble_size: usize,
+    pub epochs: usize,
+    pub learning_rate: f64,
+    pub n_cem_samples: usize,
+    pub n_cem_iters: usize,
+    pub elite_fraction: f32,
+    /// 目的ごとのサロゲートのウォームスタート weights (外側=目的, 内側=メンバー)。
+    #[serde(default)]
+    pub model_states: Vec<Vec<String>>,
+    /// 参照点マージン: ref_k = nadir_k + ref_margin·(nadir_k − ideal_k)。default 0.1。
+    #[serde(default = "default_ref_margin")]
+    pub ref_margin: f32,
+    /// CEM 初期標準偏差。default 0.2。
+    #[serde(default = "default_sigma_init")]
+    pub sigma_init: f32,
+    /// CEM スタート点数 (Pareto 点 + ランダムを巡回)。default 5。
+    #[serde(default = "default_n_cem_starts")]
+    pub n_cem_starts: usize,
+}
+
+fn default_ref_margin() -> f32 {
+    0.1
+}
+fn default_sigma_init() -> f32 {
+    0.2
+}
+fn default_n_cem_starts() -> usize {
+    5
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ProposeMoOutput {
+    pub candidates: Vec<Vec<f32>>,
+    pub ehvi_scores: Vec<f32>,
+    /// 目的ごとの次回ウォームスタート weights。
+    pub model_states: Vec<Vec<String>>,
+    pub pareto_size: usize,
+    /// 現在の Pareto フロントの超体積 (動的参照点・最小化空間)。診断用。
+    pub hypervolume: f32,
+    pub mode: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ProposeOutput {
     pub candidates: Vec<Vec<f32>>,

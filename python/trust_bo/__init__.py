@@ -1,5 +1,19 @@
 from .engine import TRustBOEngine
+from .multiobjective import MultiObjectiveEngine, hypervolume_2d
+from .rolling_engine import JobEvaluator, MockEvaluator, RollingTRustBOEngine, SlurmEvaluator
 from .space import Categorical, Float, Int
-from .tandem import TandemEngine, TandemEngineV2
 
-__all__ = ["TRustBOEngine", "TandemEngine", "TandemEngineV2", "Float", "Int", "Categorical"]
+__all__ = [
+    "TRustBOEngine",
+    "MultiObjectiveEngine", "hypervolume_2d",
+    "Float", "Int", "Categorical",
+    "JobEvaluator", "MockEvaluator", "RollingTRustBOEngine", "SlurmEvaluator",
+]
+
+# Deprecated sklearn/scipy-based engines (legacy-tandem extra). Import lazily so the
+# core package works without scipy/sklearn installed; only exposed if the extra is present.
+try:  # pragma: no cover
+    from .tandem import TandemEngine, TandemEngineV2
+    __all__ += ["TandemEngine", "TandemEngineV2"]
+except ImportError:
+    pass
