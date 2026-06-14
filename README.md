@@ -21,7 +21,7 @@ TRust-BO was built by a high school student to solve a concrete problem: optimiz
 The goal is to make Bayesian optimization fast enough to run anywhere, simple enough to use without a PhD, and accurate enough to matter in real engineering work.
 
 TRust-BO is a **Trust Region Bayesian Optimization engine** written in Rust, exposed to Python via PyO3.
-No GPU required. No cloud required. Build from source and run locally.
+No GPU required. No cloud required. `pip install trust-bo` and run locally.
 
 **What it does, precisely:** on high-dimensional (≥50D) *or* noisy / constrained problems
 (such as real CFD), TRust-BO runs **5–10× faster than BoTorch TuRBO while reaching equal or
@@ -54,7 +54,14 @@ See [docs/PERFORMANCE_ASSESSMENT.md](docs/PERFORMANCE_ASSESSMENT.md) for the hon
 
 ## Installation
 
-TRust-BO is not on PyPI yet (it's on the roadmap). Build from source — all you need is a [Rust toolchain](https://rustup.rs/) and `pip`:
+```bash
+pip install trust-bo
+```
+
+Prebuilt wheels (abi3, Python ≥3.9) are published for Linux, macOS, and Windows —
+no Rust toolchain needed for a normal install.
+
+To build from source instead (requires a [Rust toolchain](https://rustup.rs/)):
 
 ```bash
 git clone https://github.com/K092203/TRust-BO
@@ -255,13 +262,13 @@ Key design choices:
 - [x] Real CFD airfoil optimization — NeuralFoil (H-1) **and** SU2 RANS (H-2) pipelines
 - [x] Multi-objective: Chebyshev scalarization + closed-form 2-objective EHVI (Rust)
 - [x] Optuna sampler integration
+- [x] PyPI release (prebuilt abi3 wheels for Linux/macOS/Windows)
 
 ### Planned
 - [ ] SAASBO comparison + more benchmark seeds (statistical rigor)
 - [ ] Geometric shape constraints for CFD (minimum thickness/area)
 - [ ] Multi-objective beyond 2 objectives
 - [ ] Multi-TR (TuRBO-M) — deprioritized; single TR is more stable at CFD-scale budgets
-- [ ] PyPI release
 - [ ] Research write-up on lightweight BO for engineering design
 
 ---

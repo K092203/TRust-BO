@@ -41,7 +41,6 @@ EHVI hypervolume 0.0239 vs Chebyshev 0.0165 (+45%); Chebyshev gives a more diver
 - SU2 feasibility check is simplified (no minimum-thickness constraint); ultra-thin shapes
   can produce non-physical Cl/Cd. NeuralFoil pipeline is unaffected.
 - EHVI is 2-objective; use Chebyshev for 3+.
-- PyPI not yet published (build from source).
 
 ## Next milestones
 SAASBO comparison, more benchmark seeds, geometric shape constraints for CFD, PyPI release.
