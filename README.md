@@ -160,6 +160,8 @@ print(study.best_value)
 
 ## Benchmarks
 
+![TRust-BO vs BoTorch TuRBO on Ackley 100D: better optimum, 5.7× faster, CPU-only](docs/assets/benchmark_ackley100d.png)
+
 Full data and methodology: [docs/BENCHMARK.md](docs/BENCHMARK.md) and
 [docs/PERFORMANCE_ASSESSMENT.md](docs/PERFORMANCE_ASSESSMENT.md).
 Compared against **BoTorch TuRBO, CMA-ES, Random Search, NSGA-II**; SAASBO is future work.
