@@ -73,8 +73,10 @@ pub fn fit_micro_gp(xs: &[Vec<f64>], r: &[f64], rng: &mut StdRng) -> Result<Micr
 
     // ハイパーパラメータ多起点ランダム探索 (周辺対数尤度最大化)。
     // 高次元 ARD は候補数に対して不利なため n_dims > 10 は isotropic に切替。
-    let n_hypers = 40.max(4 * n_dims);
+    // d > 10 は isotropic（探索空間 3 次元固定）なので線形スケールは不要。
+    // 200D で n_hypers=800 になり 544s/run になっていた問題を修正。
     let n_ls = if n_dims <= 10 { n_dims } else { 1 };
+    let n_hypers = if n_dims <= 10 { 40.max(4 * n_dims) } else { 60 };
     let (ln_ls_lo, ln_ls_hi) = ((0.05f64).ln(), (2.0f64).ln());
     let (ln_nz_lo, ln_nz_hi) = ((1e-4f64).ln(), (1e-1f64).ln());
 
