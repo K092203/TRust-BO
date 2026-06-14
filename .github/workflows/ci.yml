@@ -29,15 +29,20 @@ jobs:
       - name: Rust tests
         run: cargo test --release
 
-      # scipy / scikit-learn are required to import trust_bo while the
-      # deprecated TandemEngine (legacy-tandem extra) is still bundled
-      - name: Install Python deps
-        run: pip install pytest scipy scikit-learn
-
       # `maturin develop` requires a virtualenv; `pip install .` builds the
       # same wheel via the maturin build backend and works anywhere
       - name: Build and install package
         run: pip install .
+
+      # The core package must import with no optional deps (numpy only).
+      # Regression guard for the lazy legacy-tandem import in __init__.py.
+      - name: Import smoke (no extras)
+        run: python -c "import trust_bo; from trust_bo import TRustBOEngine, MultiObjectiveEngine"
+
+      # scipy / scikit-learn are only needed for the deprecated TandemEngine
+      # (legacy-tandem extra) and its tests; the core package does not require them.
+      - name: Install test deps
+        run: pip install pytest scipy scikit-learn
 
       - name: Python tests
         run: pytest tests/ -q
