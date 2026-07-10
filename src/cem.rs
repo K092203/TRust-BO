@@ -32,7 +32,6 @@ pub fn cem_pool(
     let halt_eps = (sigma_init * 6e-3).max(1e-8);
 
     let mut best_pool: Vec<Vec<f32>> = vec![init_mu.to_vec()];
-
     for _ in 0..config.n_cem_iters {
         let candidates: Vec<Vec<f32>> = (0..config.n_cem_samples)
             .map(|_| {
@@ -49,8 +48,11 @@ pub fn cem_pool(
             .collect();
 
         let (means, stds) = ensemble.predict(&candidates, n_dims);
-        let scores =
-            acquisition::score(&means, &stds, best_norm, config.beta, &config.acquisition);
+        let scores = if config.acquisition == "ts" {
+            acquisition::ts(&means, &stds, &mut rng)
+        } else {
+            acquisition::score(&means, &stds, best_norm, config.beta, &config.acquisition)
+        };
 
         let mut indexed: Vec<(usize, f32)> = scores.into_iter().enumerate().collect();
         indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));

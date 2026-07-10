@@ -120,7 +120,7 @@ trust-bo/
 │   ├── tr.rs           # Trust Region 管理                 (254行)
 │   ├── cem.rs          # Cross-Entropy Method              (76行)
 │   ├── batch.rs        # Greedy 候補選択                   (58行)
-│   ├── acquisition.rs  # EI / UCB 獲得関数                 (40行)
+│   ├── acquisition.rs  # TS / EI / UCB 獲得関数                 (40行)
 │   ├── candidate.rs    # Halton / LHS 準乱数列             (108行)
 │   └── normalize.rs    # z-score 正規化                    (10行)
 └── python/trust_bo/
@@ -175,7 +175,7 @@ engine.py
 | `n_cem_samples` | 512 | CEM 1イテレーションのサンプル数 |
 | `n_cem_iters` | 25 | CEM 最大イテレーション数 |
 | `elite_fraction` | 0.1 | CEM エリート割合 (≈51点) |
-| `acquisition` | "ei" | 獲得関数 ("ei" or "ucb") |
+| `acquisition` | "ts" | 獲得関数 ("ts" / "ei" / "ucb")。"ts" は乱択サンプリング (TS 風) |
 | `beta` | 2.0 | UCB の探索係数 |
 | `tau_succ` | 3 | 連続成功バッチ数 → TR 辺長拡大 |
 | `tau_fail` | 5 | 連続失敗バッチ数 → TR 辺長縮小 |
@@ -319,6 +319,11 @@ Phase 2: 残り (batch_size - n_trs) 枠を greedy_select_partial で充填
 `per_tr_min=1` の根拠: 当初 `max(1, batch_size/n_trs)` だったが、n_trs=3 で各TRに3スロット強制配分すると探索TRが悪い候補で枠を消費して性能が劣化するため最小保証 1 に変更。
 
 ### 2.7 獲得関数（`acquisition.rs`）
+
+デフォルトは `"ts"`（Thompson サンプリング風乱択）: 候補ごとに
+`μ + z·σ, z~N(0,1)` を 1 回サンプルしてスコアとする。50–100D ベンチマークで
+EI 比リグレット約 10–14% 改善（2026-07、16 ケース × 8 シード）。
+`"ei"` / `"ucb"` も選択可能。
 
 ```
 EI(x) = (μ - f_best) × Φ(z) + σ × φ(z)
@@ -802,7 +807,7 @@ _DEFAULT_CONFIG = {
     "n_cem_iters": 25,
     "elite_fraction": 0.1,
     "beta": 2.0,
-    "acquisition": "ei",
+    "acquisition": "ts",
     "tau_succ": 3,
     "tau_fail": 5,
     "l_max": 1.0,

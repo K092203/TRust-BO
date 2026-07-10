@@ -17,6 +17,21 @@ pub fn ucb(means: &[f32], stds: &[f32], beta: f32) -> Vec<f32> {
     means.iter().zip(stds).map(|(m, s)| m + beta * s).collect()
 }
 
+pub fn ts(means: &[f32], stds: &[f32], rng: &mut rand::rngs::StdRng) -> Vec<f32> {
+    means
+        .iter()
+        .zip(stds)
+        .map(|(m, s)| {
+            let u1 = 1.0 - rand::Rng::gen::<f32>(rng);
+            let u2 = rand::Rng::gen::<f32>(rng);
+            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+            let score = m + z * s;
+            // 予測が NaN/inf の候補は決定的に最下位へ (実質除外)
+            if score.is_finite() { score } else { f32::MIN }
+        })
+        .collect()
+}
+
 /// Expected Improvement (EI)。内部は最大化。f_best は正規化済み現在最良値。
 pub fn ei(means: &[f32], stds: &[f32], f_best: f32) -> Vec<f32> {
     means
@@ -245,5 +260,15 @@ mod tests {
         let good = ehvi_2d([0.2, 0.2], [0.5, 0.5], &front, [3.0, 3.0]);
         let bad = ehvi_2d([0.9, 0.9], [0.5, 0.5], &front, [3.0, 3.0]);
         assert!(good > bad && bad >= 0.0, "good={good}, bad={bad}");
+    }
+
+    #[test]
+    fn ts_fixed_seed_is_finite_and_samples_away_from_means() {
+        let means = [1.0, -2.0];
+        let stds = [0.5, 1.0];
+        let mut rng = StdRng::seed_from_u64(42);
+        let samples = ts(&means, &stds, &mut rng);
+        assert!(samples.iter().all(|sample| sample.is_finite()));
+        assert!(samples.iter().zip(means).any(|(sample, mean)| *sample != mean));
     }
 }

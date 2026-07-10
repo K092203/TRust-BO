@@ -156,7 +156,7 @@ self._config.setdefault("l_init", adaptive_l)
 | `n_cem_samples` | 512 | CEM の 1 イテレーションあたりサンプル数 |
 | `n_cem_iters` | 25 | CEM 最大イテレーション数 |
 | `elite_fraction` | 0.1 | CEM エリート比率（512×0.1≈51 点） |
-| `acquisition` | "ei" | 獲得関数（EI / UCB） |
+| `acquisition` | "ts" | 獲得関数（TS 風乱択 / EI / UCB）。デフォルト "ts" は候補ごとに N(μ,σ²) からスコアを乱択サンプリングする |
 | `beta` | 2.0 | UCB の探索係数（EI 時は未使用） |
 | `tau_succ` | 3 | 連続成功 → TR 拡大の閾値 |
 | `tau_fail` | 5 | 連続失敗 → TR 縮小の閾値 |
@@ -519,7 +519,22 @@ let effective_n_cem_iters = if n_complete < 3 * config.n_init {
 
 ## 10. 獲得関数（acquisition.rs）
 
-### 10.1 Expected Improvement（デフォルト）
+### 10.0 Thompson サンプリング風乱択（"ts"、デフォルト）
+
+```
+TS(x) = μ(x) + z·σ(x),   z ~ N(0, 1)  (候補ごとに独立サンプル)
+```
+
+アンサンブル予測の周辺分布 N(μ, σ²) から候補ごとにスコアを 1 回サンプルする
+乱択獲得関数（厳密な Thompson sampling ではなく、その周辺分布近似）。
+CEM の各イテレーションで再サンプルされるため探索に自然な多様性が生まれ、
+50–100D の合成ベンチマーク（8 シード × 16 ケース）で EI 比リグレット幾何平均
+約 10–14% 改善を確認して 2026-07 にデフォルト化した。非有限予測の候補は
+f32::MIN に落として実質除外する。制約付きでは P(feasible) 乗算の前に
+スコアを非負へシフトする（符号付きのままだと infeasible 候補が有利になるため）。
+なお EI 停滞検出（Phase 2 遷移シグナル）は acquisition="ei" 限定のまま。
+
+### 10.1 Expected Improvement（"ei"）
 
 ```
 EI(x) = (μ(x) − f_best) Φ(z) + σ(x) φ(z),   z = (μ − f_best)/σ

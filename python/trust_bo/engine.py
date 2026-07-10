@@ -20,7 +20,9 @@ _DEFAULT_CONFIG: dict = {
     "n_cem_iters": 25,
     "elite_fraction": 0.1,
     "beta": 2.0,
-    "acquisition": "ei",
+    # "ts" (Thompson-style randomized sampling) は 50-100D ベンチマークで
+    # EI 比リグレット幾何平均 ~10-14% 改善 (16 ケース × 8 シード、2026-07 検証)
+    "acquisition": "ts",
     # Trust Region  (l_init は __init__ で次元数から適応計算)
     "tau_succ": 3,
     "tau_fail": 5,

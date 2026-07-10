@@ -122,16 +122,16 @@ impl Ensemble {
                 let mut prev_loss = f32::INFINITY;
                 // ウォームスタート時は収束が速いため、より頻繁に収束チェックを行う
                 let check_every = if warm_hex.filter(|h| !h.is_empty()).is_some() { 10 } else { 50 };
+                let x = Tensor::<AB, 2>::from_data(
+                    TensorData::new(xs_boot.clone(), [n, n_dims]),
+                    &device,
+                );
+                let y_true = Tensor::<AB, 2>::from_data(
+                    TensorData::new(ys_boot.clone(), [n, 1]),
+                    &device,
+                );
                 for ep in 0..epochs {
-                    let x = Tensor::<AB, 2>::from_data(
-                        TensorData::new(xs_boot.clone(), [n, n_dims]),
-                        &device,
-                    );
-                    let y_true = Tensor::<AB, 2>::from_data(
-                        TensorData::new(ys_boot.clone(), [n, 1]),
-                        &device,
-                    );
-                    let diff = model.forward(x) - y_true;
+                    let diff = model.forward(x.clone()) - y_true.clone();
                     let loss = (diff.clone() * diff).mean();
                     final_loss = loss.clone().into_scalar();
                     let grads = loss.backward();

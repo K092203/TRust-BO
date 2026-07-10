@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Default acquisition is now `"ts"`** (Thompson-sampling-style randomized
+  acquisition: per-candidate draws from the ensemble's predictive marginal
+  `N(μ, σ²)`). On a 16-case synthetic suite (Ackley/Rastrigin/Rosenbrock/Levy
+  × 50/100D × {noise-free, 5% noise} × 8 seeds, budget 250) it improves final
+  regret by ~10–14% geometric mean over EI, winning 27/32 case-comparisons.
+  `"ei"` and `"ucb"` remain available via `config={"acquisition": "ei"}`.
+- **~2× faster `ask()`**: CEM candidate generation now runs its multi-start /
+  multi-TR jobs in parallel with rayon, and constant training tensors are
+  hoisted out of the surrogate epoch loop. Same-seed results are bit-identical
+  to the previous sequential implementation.
+- Constrained `"ts"` scores are shifted non-negative before the
+  P(feasible) weighting (signed scores would otherwise favor
+  predicted-infeasible points); non-finite predictions rank last
+  deterministically.
+
 ### Added
 
 - **Trust Region Bayesian Optimization engine written in Rust** (TuRBO-style),
@@ -15,7 +32,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fits the residuals of the MLP ensemble near the incumbent for endgame
   refinement. Enabled with `config={"enable_phase2": True}`. No sklearn needed.
   +32% over plain TRust-BO at 50D, +55% at 10D (Ackley, 3-seed median).
-- **Constraint handling** via a feasibility surrogate (EI × P(feasible)).
+- **Constraint handling** via a feasibility surrogate (acquisition × P(feasible)).
 - **Async parallel / rolling evaluation** (`RollingTRustBOEngine`, SLURM-ready)
   for expensive solvers where evaluations take minutes to hours.
 - **Multi-objective optimization** (`MultiObjectiveEngine`): Chebyshev scalarization

@@ -4576,6 +4576,7 @@ dependencies = [
  "burn",
  "pyo3",
  "rand 0.8.6",
+ "rayon",
  "serde",
  "serde_json",
 ]

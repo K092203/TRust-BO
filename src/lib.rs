@@ -18,6 +18,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 
 #[pyclass]
 pub struct Engine {}
@@ -45,10 +46,10 @@ impl Engine {
             .map_err(|e| PyValueError::new_err(format!("invalid tr_states_json: {e}")))?;
 
         match config.acquisition.as_str() {
-            "ucb" | "ei" => {}
+            "ucb" | "ei" | "ts" => {}
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown acquisition '{other}': expected 'ucb' or 'ei'"
+                    "unknown acquisition '{other}': expected 'ucb', 'ei', or 'ts'"
                 )))
             }
         }
@@ -352,8 +353,7 @@ impl Engine {
             ..config.clone()
         };
 
-        let mut pool: Vec<Vec<f32>> = vec![];
-        let mut pool_tr_idx: Vec<usize> = vec![]; // どの TR が生成した候補か
+        let mut cem_jobs: Vec<(usize, Vec<f32>, Vec<f32>, Vec<f32>, f32, u64)> = vec![];
 
         for (tr_idx, tr_state) in tr_states.iter().enumerate() {
             let (lo, hi) = tr::tr_bounds(&tr_state.center, tr_state.side_length);
@@ -382,40 +382,87 @@ impl Engine {
                     .collect()
             };
 
-            let tr_pool_start = pool.len();
             for (k, start_mu) in start_points.iter().enumerate() {
-                let elites = cem::cem_pool(
-                    &ensemble,
-                    config.n_dims,
-                    start_mu,
-                    best_norm,
+                cem_jobs.push((
+                    tr_idx,
+                    start_mu.clone(),
+                    lo.clone(),
+                    hi.clone(),
                     sigma_init,
-                    &lo,
-                    &hi,
-                    &cem_config,
                     // tr_idx=0, k=0,1,2 → seed+1,2,3  (n_trs=1 との後方互換を保つ)
                     seed.wrapping_add(1 + (tr_idx as u64 * 100 + k as u64)),
-                );
-                pool.extend(elites);
+                ));
             }
-            let tr_pool_end = pool.len();
-            for _ in tr_pool_start..tr_pool_end {
-                pool_tr_idx.push(tr_idx);
-            }
+        }
+
+        // par_iter on a Vec is indexed, so collect preserves the sequential
+        // (tr_idx, k) job order before candidates are appended.
+        // Burn autodiff models are Send but not Sync, so each job receives an
+        // owned clone instead of sharing the trained ensemble between workers.
+        let job_ensembles: Vec<surrogate::Ensemble> = (0..cem_jobs.len())
+            .map(|_| surrogate::Ensemble {
+                members: ensemble.members.clone(),
+            })
+            .collect();
+        let job_results: Vec<(usize, Vec<Vec<f32>>)> = cem_jobs
+            .into_par_iter()
+            .zip(job_ensembles)
+            .map(|((tr_idx, start_mu, lo, hi, sigma_init, cem_seed), job_ensemble)| {
+                (
+                    tr_idx,
+                    cem::cem_pool(
+                        &job_ensemble,
+                        config.n_dims,
+                        &start_mu,
+                        best_norm,
+                        sigma_init,
+                        &lo,
+                        &hi,
+                        &cem_config,
+                        cem_seed,
+                    ),
+                )
+            })
+            .collect();
+        let mut pool: Vec<Vec<f32>> = vec![];
+        let mut pool_tr_idx: Vec<usize> = vec![]; // どの TR が生成した候補か
+        for (tr_idx, elites) in job_results {
+            pool_tr_idx.extend(std::iter::repeat_n(tr_idx, elites.len()));
+            pool.extend(elites);
         }
 
         // ── Acquisition スコア計算 ────────────────────────────────────────────────
         let (pool_means, pool_stds) = ensemble.predict(&pool, config.n_dims);
-        let mut acq_scores = acquisition::score(
-            &pool_means,
-            &pool_stds,
-            best_norm,
-            config.beta,
-            &config.acquisition,
-        );
+        let mut acq_scores = if config.acquisition == "ts" {
+            let mut rng = StdRng::seed_from_u64(seed.wrapping_add(0x7502_5ca1));
+            acquisition::ts(&pool_means, &pool_stds, &mut rng)
+        } else {
+            acquisition::score(
+                &pool_means,
+                &pool_stds,
+                best_norm,
+                config.beta,
+                &config.acquisition,
+            )
+        };
 
         // 制約付き: EI × P(feasible) で infeasible 領域を抑制
         if let Some(ref feas_surr) = feasibility_ensemble {
+            if config.acquisition == "ts" {
+                // 符号付き TS スコアは P(feasible) 乗算前に非負へシフトする。
+                // f32::MIN は ts() の非有限フォールバック番兵なのでシフト対象から除外し
+                // 0 に落とす (巨大シフトによる有効スコアの精度崩壊を防ぐ)。
+                let min_s = acq_scores
+                    .iter()
+                    .cloned()
+                    .filter(|s| *s > f32::MIN)
+                    .fold(f32::INFINITY, f32::min);
+                if min_s.is_finite() {
+                    for s in &mut acq_scores {
+                        *s = if *s > f32::MIN { *s - min_s } else { 0.0 };
+                    }
+                }
+            }
             let (feas_means, _) = feas_surr.predict(&pool, config.n_dims);
             for (s, f) in acq_scores.iter_mut().zip(feas_means.iter()) {
                 *s *= f.clamp(0.0, 1.0);
