@@ -13,6 +13,11 @@ v0.1.0→v0.2.0差分は CHANGELOG.md `[0.2.0]` 節が正。
 - **Python側が状態を往復保持**: `TRustBOEngine`(python/trust_bo/engine.py)が履歴・TR状態・モデル重み(hex)・phaseを保存し、ask/tell APIを提供。
 - ビルド: `maturin develop --release`(**releaseほぼ必須**、venvは`.venv`、rustupは`~/.cargo`)。
 
+**このステートレス設計は守る価値が実証済み**: エンジンを複数インスタンス自由に合成できるため、
+非同期並列(rolling_engine)もMFカスケード(multifidelity.py — HF評価70%削減を達成した機能)も
+**Rustコア変更ゼロのPython合成**で実装できた(2026-07-12)。「コアに状態を持たせる」方向の
+変更提案はこの配当を失う — 原則として拒否し、状態はPython層で往復させること。
+
 ## ask() 1回の処理フロー(src/lib.rs `propose()`, 全体で~800行)
 
 1. feasible数 < `n_init` → Halton準乱数を返すだけ(cold start、candidate.rs)
@@ -128,6 +133,23 @@ PERFORMANCE_ASSESSMENT.md(**正直な性能評価**: 低次元・小予算・滑
 50D+/ノイズ/制約/実CFDで5–10倍速×同等以上の品質が本領) / BENCHMARK.md / ROADMAP.md /
 AI_OPERATIONS.md(マルチエージェント運用の実データ・役割設計の理由・損益の経験則。
 下記規約の根拠データはここ)
+
+## セッション開始チェックリスト(ワークフロー再現用)
+
+新しいセッションで開発ジョブを始めるときは、この順で立ち上げる:
+
+1. **状態確認**: `git log --oneline -5` と `git status` — 前セッションの終了点と未コミット物を把握
+2. **禁止事項の再読**: 本ファイルの「棄却済み」節(再検証しない)と「落とし穴・不変条件」節
+3. **開発ジョブの標準パイプライン**(詳細手順は docs/AI_OPERATIONS.md §6 のプレイブック):
+   **調査(サブエージェント並列、棄却済みリストを全員に貼る)→ 吟味(sol)→
+   実装(コア=自分/定型=terra+timeout)→ 監査(最終実装はsol xhigh、A/B投入の前に)→
+   実測A/B(SMOKE→本走、幾何平均比+勝敗数で判定)→ 記録(BENCHMARK.mdに数値、
+   本ファイルに要約、負の結果も)**
+4. **新機能の鉄則**: configフラグ+`#[serde(default)]` → フラグOFFのビット一致確認(bitcheck方式:
+   enable_phase2構成で60イテレーションの全提案系列をダンプ・比較)→ フラグONの機能確認 → A/B
+5. **委譲の型**: codex execは必ず`timeout 1500`ラップ+出力は`> file 2>&1`全量リダイレクト。
+   納品は「git status範囲確認→全文Read→SMOKE→本走」の検収を省略しない
+6. **コミット/タグ**: コミットはユーザー指示後。`v*`タグpushはPyPI自動公開なので明示確認必須
 
 ## エージェント運用規約(別プロジェクトのAGENTS.mdから抽出し、2026-07の開発で実運用した方針)
 
