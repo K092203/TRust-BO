@@ -42,9 +42,10 @@ v0.1.0→v0.2.0差分は CHANGELOG.md `[0.2.0]` 節が正。
 | types.rs | ~150 | ProposeConfig等(新機能は`#[serde(default)]`フィールドで後方互換に追加する慣習) |
 | candidate/batch/normalize/pareto/hypervolume | 各<130 | 補助 |
 
-Python側(python/trust_bo/, 計~1550行): engine.py(本体+デフォルト設定辞書)、
+Python側(python/trust_bo/, 計~1700行): engine.py(本体+デフォルト設定辞書)、
 space.py(Float/Int/Categorical→[0,1]エンコード)、history.py(Trial保存、save/load)、
 multiobjective.py(Chebyshevスカラー化、Rust不要)、rolling_engine.py(SLURM等の非同期並列評価)、
+multifidelity.py(CascadeMFEngine: LF→HF 2段カスケード、Float空間限定、Rustコア不変)、
 tandem.py(scipy版Phase2、旧)、integrations/optuna.py(sampler、acquisition="ei"固定)。
 
 ## 検証コマンド
@@ -134,10 +135,22 @@ PERFORMANCE_ASSESSMENT.md(**正直な性能評価**: 低次元・小予算・滑
   「差分レビュー + ベンチ実測」でClaude側が検証する
 - **Codexの使い分け**: 定型作業 = `codex exec -s workspace-write -m gpt-5.6-terra
   -c model_reasoning_effort="high"`。数学・数値の精密レビュー等の難所 = `-m gpt-5.6-sol`。
+  最終リリース前監査・最難関 = `-m gpt-5.6-sol -c model_reasoning_effort="xhigh"`(sol ultra)。
   レビュー用途は read-only(`-s` なし)で呼ぶ
+- **codex exec は必ず `timeout <秒>` でラップする**: terraが1.5時間無出力でハングした実績あり
+  (2026-07-11)。25分(1500s)程度のハードキャップ+出力ファイルの早期確認。ハング時はkillして
+  自前実装に切替(スクリプト系なら大抵その方が速い)
 - **ハルシネーション対策は多重チェックで担保**: 「実装 ⇔ 独立レビュー ⇔ 実測A/B」の三重化。
   実績: solレビューが実バグ2件(制約付きTSの符号誤り、Box-Muller偏り)を検出、
-  ビット一致検証がterraの実装事故(warm path破壊)を検出
+  ビット一致検証がterraの実装事故(warm path破壊)を検出、sol ultra監査がRAASP初版の
+  σ人工収縮(√p倍/反復)を検出(2026-07-12 — A/B実行中に発覚し測定やり直しで済んだ)
+- **欠陥版で走ったA/B結果は破棄して再測定**: 監査・レビューで実装欠陥が見つかったら、
+  その版で収集済みのA/B行をCSVから削除し(bench_resumeが再実行してくれる)、修正版で
+  取り直してから採否判定する。欠陥版の数値で棄却/採用を決めない
+- **文献調査サブエージェントには棄却済みリストを必ず渡す**: 渡し忘れたエージェントが
+  棄却済みのHvarfner事前を再提案した実例あり(2026-07-12)。本ファイルの「棄却済み」節を
+  プロンプトに貼ること。逆に、調査エージェントの役割は明確に分割する
+  (MF-BO/高次元/サロゲートの3分割は機能した)
 - **ドキュメントは一元管理**: 同じ内容を複数mdに重複記載しない(陳腐化・矛盾の温床)。
   エージェント向け要約は本ファイルのみ、詳細は docs/ 各編へリンクで委ねる
 - **結果は数値で正直に報告**: 改善しなかった案・失敗した実装も数値とともに記録する
