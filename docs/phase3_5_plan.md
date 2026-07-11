@@ -1,5 +1,9 @@
 # Phase 3.5 作業計画
 
+> **歴史的記録**: Phase 3.5 完了時点(2026-06)の計画書。Phase 4(制約付き)以降、
+> Phase G/H/K(実 CFD・多目的・rayon 並列化・ts デフォルト化等)まで完了済み。
+> 現状は `CLAUDE.md` / `docs/ROADMAP.md` / `docs/DEVELOPMENT.md` を参照。
+
 目的: Phase 3 の安定化・評価強化。Phase 4 (制約付き) に進む前の品質基盤を作る。
 実装変更は最小限に抑え、診断・評価ツールの充実を優先する。
 

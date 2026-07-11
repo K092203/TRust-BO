@@ -195,6 +195,12 @@ TRust-BO wins **16 of 18** mid-budget conditions and **5 of 5** at budget=500, w
 
 At 16D smooth, BoTorch leads on median; TRust-BO reaches the single best design.
 
+> Measured with `acquisition="ei"` (the engine default at the time). The current default is
+> `"ts"`, which underperforms `"ei"` on this same smooth CST 16D Cl/Cd objective in a separate
+> A/B (see [docs/BENCHMARK.md §15](docs/BENCHMARK.md), different seeds/budget than the table
+> above, so the exact 227.9 is not expected to reproduce under today's default) — pass
+> `config={"acquisition": "ei"}` explicitly for CFD-shaped objectives.
+
 **H-2 (SU2 RANS, real Navier-Stokes, 16D, 3 seeds):** noisy, mesh-constrained.
 
 | Method | median Cl/Cd | seeds in physical range |

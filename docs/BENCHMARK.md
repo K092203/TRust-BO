@@ -20,6 +20,8 @@ TRust-BO+P2 を BoTorch_TuRBO・HEBO・Random と比較した実験記録。
 11. [Phase K-2: 多目的最適化（2D EHVI）](#11-phase-k-2-多目的最適化2d-ehvi)
 12. [Phase H-2: 実 CFD 最適化（SU2 RANS）](#12-phase-h-2-実-cfd-最適化su2-rans)
 13. [Phase K-2-8: 実 CFD 多目的最適化（SU2 RANS, Cl↑+Cd↓）](#13-phase-k-2-8-実-cfd-多目的最適化su2-rans-clcd)
+14. [rayon 並列化 + 獲得関数デフォルト "ts" 化](#14-2026-07-11-rayon-並列化--獲得関数デフォルトts化コミット-d6a02f5)
+15. [Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B](#15-2026-07-11-phase-2-lognormal-長さスケール事前--neuralfoil-での獲得関数-ab)
 
 ---
 
@@ -646,12 +648,27 @@ H-2 の単目的（Cl/Cd 最大化）を 2 目的（Cl 最大化 + Cd 最小化�
 - 2 seeds のみのため統計的主張は弱い。seeds 増は今後の課題。
 - EHVI は 2 目的限定（閉形式）。3 目的以上は Chebyshev を使う。
 - 非物理アーティファクト（§12.5）の対策（最小厚み・面積制約）は MO でも同様に必要。
-- **合格基準 K-2「実 CFD の Pareto フロントで意味のある揚抗トレードオフ」**: Chebyshev で
+- **合格基準 H-2「実 CFD の Pareto フロントで意味のある揚抗トレードオフ」**(`ROADMAP.md`): Chebyshev で
   4–5 点の単調な Cl–Cd トレードオフを確認、達成。
 
-## 14. 2026-07-11: Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B
+## 14. 2026-07-11: rayon 並列化 + 獲得関数デフォルト "ts" 化(コミット d6a02f5)
 
-### 14.1 Phase 2 マイクロ GP の LogNormal 長さスケール事前（棄却）
+- 内容: (a) CEM ジョブディスパッチと学習用テンソル組立を rayon で並列化。
+  (b) 獲得関数のデフォルトを "ei" → "ts"(候補ごとに `μ+z·σ, z~N(0,1)` を乱択サンプル)に変更。
+- 設定: Ackley/Rastrigin/Rosenbrock/Levy × {50,100}D × ノイズ {0,5%} × 8 seeds(16ケース×勝敗判定)、
+  budget 250。ハーネス: `benchmarks/midbudget_benchmark.py`(結果 CSV は `.gitignore` 対象のため
+  未保存 — 再現する場合は同ハーネスを再実行のこと)。
+- 結果:
+  - rayon 並列化: ask() 約 2 倍高速化。同シードで提案系列がビット一致(並列化前後の退行なし)。
+  - "ts" 既定化: EI 比リグレット幾何平均で **10–14% 改善**、16 ケース中 **27/32 の seed×問題の
+    組み合わせで勝利**。
+- 判定: **採用**(両方とも main にマージ済み)。
+- 注意: この結果は**合成多峰関数限定**。本ファイル §15.2 で実 CFD 様(NeuralFoil, 単峰寄り)の
+  応答面では逆に EI が優位という結果が出ており、"ts" は万能ではない。
+
+## 15. 2026-07-11: Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B
+
+### 15.1 Phase 2 マイクロ GP の LogNormal 長さスケール事前(棄却)
 
 - 内容: `phase2_ls_prior` フラグで Phase 2 マイクロ GP のハイパラ推定を MLE → MAP 化。
   事前 ls ~ LogNormal(μ, σ²), μ = ln(TR辺長) + √2 + 0.5·ln d, σ = √3
@@ -667,7 +684,7 @@ H-2 の単目的（Cl/Cd 最大化）を 2 目的（Cl 最大化 + Cd 最小化�
   解釈: Phase 2 GP は TR 内残差の局所モデルで学習点も少なく、事前の恩恵が出る
   グローバル・高次元 GP という論文の前提と状況が異なる。
 
-### 14.2 NeuralFoil（実 CFD 代替）での acquisition "ts" vs "ei"（EI 優位）
+### 15.2 NeuralFoil(実 CFD 代替)での acquisition "ts" vs "ei"(EI 優位)
 
 - 内容: 2026-07 に合成関数で採用した TS デフォルトを、実 CFD 様応答面で再検証。
 - 設定: CST 16D 翼型 Cl/Cd 最大化（α=4°, Re=3e6, feasibility 制約つき）、budget 200、

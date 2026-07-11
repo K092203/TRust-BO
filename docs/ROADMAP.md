@@ -14,7 +14,9 @@
 | **H** | 実 CFD ベンチマーク | 大（環境構築含む） | ✅ H-1（NeuralFoil）・H-2（SU2 RANS）完了 |
 | **K** | 多目的最適化 | 大（コアアルゴリズム変更） | ✅ K-1・K-2・K-2-8（実 CFD Cl/Cd）完了 |
 
-ステータス凡例: 🔲 未着手 / 🔄 進行中 / ✅ 完了 / ⛔ ブロック中
+ステータス凡例: 🔲 未着手 / 🔄 進行中 / ✅ 完了 / ⛔ ブロック中。
+**「完了」は実装・ベンチ実行の完了を指し、合格基準(下記)の達成を意味しない**
+(例: K は実装・実測ともに完了だが、K-1/K-2 の数値目標は未達 — 詳細は各節の合格基準を参照)。
 
 ---
 
@@ -267,12 +269,15 @@ src/
 | K-2-5 | `lib.rs`: `propose_mo`（目的別サロゲート + EHVI-CEM） | ✅ |
 | K-2-6 | Python `MultiObjectiveEngine(method="ehvi")` + ZDT/高次元ベンチ | ✅ `zdt_ehvi_benchmark.py` |
 | K-2-7 | NSGA-II 比較ベンチ実行・`BENCHMARK.md` 更新 | ✅ §11 追記 |
-| K-2-8 | H-2 の Cl/Cd 同時最適化への適用 | 🔲（H-2 完了済み、着手可） |
+| K-2-8 | H-2 の Cl/Cd 同時最適化への適用 | ✅ `BENCHMARK.md` §13（EHVI が Chebyshev を HV +45%上回る） |
 
 ### 合格基準
 - [ ] K-1: ZDT1 で Pareto フロントの hypervolume が Random の 2× 以上
+      (`BENCHMARK.md` §11.2 実測: Chebyshev 0.3200 / Random 0.3138 ≈ 1.02× — 未達)
 - [ ] K-2: ZDT2 で NSGA-II と同等以上の hypervolume を 10× 速く達成
-- [ ] H-2（実 CFD）の Pareto フロントで意味のある揚抗トレードオフが確認できる
+      (`BENCHMARK.md` §11.2 実測: HV は達成 0.1820>0.1295 だが、ZDT2 評価がほぼ無償なため
+      wall-clock は逆に NSGA-II が有利。§11.3 の考察どおり実 CFD 条件でのみ意味を持つ基準)
+- [x] H-2（実 CFD）の Pareto フロントで意味のある揚抗トレードオフが確認できる（`BENCHMARK.md` §13.3）
 
 ---
 

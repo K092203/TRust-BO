@@ -1,6 +1,10 @@
 # TRust-BO 開発ログ
 
-最終更新: 2026-06-11（Phase 15: Rust ネイティブ Tandem Residual-GP Phase 2）
+最終更新: 2026-06-11（Phase 15: Rust ネイティブ Tandem Residual-GP Phase 2）。
+2026-07 の rayon 並列化・獲得関数 "ts" デフォルト化・Phase H/K 完了・
+`phase2_ls_prior` 実験については本ファイルではなく `CLAUDE.md` と
+`docs/BENCHMARK.md` を参照(一次情報源はそちら、本ファイルは Phase 15 までの
+開発ログとして凍結)。
 
 ---
 
@@ -108,7 +112,8 @@ TRust-BO は **Trust Region + MLP Bootstrap Ensemble サロゲート + CEM 最�
 
 - **実装**: Rust コア（PyO3 経由で Python に公開）
 - **ビルド**: `maturin develop --release`（リリースモード必須。デバッグモードは u64 オーバーフロー問題あり）
-- **テスト**: `pytest tests/`（43テスト / 約430秒）
+- **テスト**: `pytest tests/`（Phase 15 時点で43テスト。2026-07 時点の最新テスト数は
+  `CLAUDE.md` 参照)
 - **特徴**: TuRBO-M（複数 Trust Region 並列運用）、サロゲートウォームスタート、制約付き最適化
 
 ```
@@ -321,9 +326,9 @@ Phase 2: 残り (batch_size - n_trs) 枠を greedy_select_partial で充填
 ### 2.7 獲得関数（`acquisition.rs`）
 
 デフォルトは `"ts"`（Thompson サンプリング風乱択）: 候補ごとに
-`μ + z·σ, z~N(0,1)` を 1 回サンプルしてスコアとする。50–100D ベンチマークで
-EI 比リグレット約 10–14% 改善（2026-07、16 ケース × 8 シード）。
-`"ei"` / `"ucb"` も選択可能。
+`μ + z·σ, z~N(0,1)` を 1 回サンプルしてスコアとする。2026-07 に合成多峰
+関数ベンチマークでの改善を確認しデフォルト化(数値・実CFDでの逆転結果は
+`CLAUDE.md` / `docs/BENCHMARK.md` §14–15 参照)。`"ei"` / `"ucb"` も選択可能。
 
 ```
 EI(x) = (μ - f_best) × Φ(z) + σ × φ(z)
@@ -841,7 +846,8 @@ engine.tell(cands, [{"value": fn(c), "feasible": constraint(c)} for c in cands])
 |---|---|---|
 | warm start 実装前 | ~713s | 41 |
 | warm start 実装後 | ~440s | 43 |
-| Phase 12（現在） | ~851s (full) / ~7s (multi-tr only) | **47** |
+| Phase 12 | ~851s (full) / ~7s (multi-tr only) | 47 |
+| 2026-07-11（rayon 並列化・ts デフォルト化・phase2_ls_prior 追加後） | ~351s (pytest) | Python 69 passed+2 skipped + Rust 39 passed = 収集110・合格**108** |
 
 ### 最適化性能ベンチマーク
 
@@ -1014,23 +1020,29 @@ def tr_state(self) -> dict | None:
 
 ---
 
-## 7. 今後の開発ロードマップ
+## 7. 今後の開発ロードマップ（Phase 12 時点、2026-06-09。現状は古い — 下記参照）
 
-### 最高優先度（今すぐやる）
+> **このセクションは Phase 12（OSS 公開準備）時点のスナップショットで、2026-06-09 から
+> 更新していない。ここに挙げた「最高優先度」「高優先度」項目(OpenFOAM 接続、翼型最適化、
+> README 実測追記、PyPI publish、CONTRIBUTING.md、CHANGELOG.md)は Phase G/H/K で
+> **すべて完了済み**。現在の未着手項目・優先度は `docs/ROADMAP.md` を参照すること。
+> 以下は歴史的記録として残す。
 
-| タスク | 内容 | 根拠 |
-|---|---|---|
-| **OpenFOAM 接続スクリプト** | パラメータ → メッシュ生成 → simpleFoam 実行 → Cd/Cl 抽出 | 合成ベンチから実問題への橋渡し |
-| **翼型最適化の実施** | NACA翼型 3〜6パラメータ, budget=30〜50, i5 14500 + WSL2 | TRust-BO の設計意図を実証する唯一の方法 |
-| **結果を README に追記** | 実問題での Cd 改善率・必要 run 数を記載 | OSS として意味のある差別化要素になる |
-
-### 高優先度（OpenFOAM検証後）
+### 最高優先度（Phase 12 時点で未着手だった項目、現在は完了）
 
 | タスク | 内容 | 根拠 |
 |---|---|---|
-| **PyPI publish** | `maturin publish` | `pip install trust-bo` で誰でも使える |
-| **CONTRIBUTING.md** | issue/PR ガイドライン | OSS として最低限必要 |
-| **CHANGELOG.md** | バージョン管理の起点 | リリース管理 |
+| ~~OpenFOAM 接続スクリプト~~ | パラメータ → メッシュ生成 → simpleFoam 実行 → Cd/Cl 抽出 | 合成ベンチから実問題への橋渡し |
+| ~~翼型最適化の実施~~ | NACA翼型 3〜6パラメータ, budget=30〜50 | TRust-BO の設計意図を実証する唯一の方法 |
+| ~~結果を README に追記~~ | 実問題での Cd 改善率・必要 run 数を記載 | OSS として意味のある差別化要素になる |
+
+### 高優先度（同上、現在は完了）
+
+| タスク | 内容 | 根拠 |
+|---|---|---|
+| ~~PyPI publish~~ | `maturin publish` | `pip install trust-bo` で誰でも使える |
+| ~~CONTRIBUTING.md~~ | issue/PR ガイドライン | OSS として最低限必要 |
+| ~~CHANGELOG.md~~ | バージョン管理の起点 | リリース管理 |
 
 ### 中優先度
 
@@ -1044,10 +1056,10 @@ def tr_state(self) -> dict | None:
 
 | タスク | 内容 |
 |---|---|
-| 多目的サポート | objective_values 全成分の活用 |
-| 非同期評価サポート | ask 先打ち・途中 tell |
-| GPU バックエンド | 高次元・大規模での速度改善 |
-| Integer / Categorical の TR 対応 | 現在は [0,1] 正規化で近似的に対応 |
+| ~~多目的サポート~~ | objective_values 全成分の活用 → Phase K-2 で `MultiObjectiveEngine`(Chebyshev + 2D EHVI)として完了 |
+| ~~非同期評価サポート~~ | ask 先打ち・途中 tell → `RollingTRustBOEngine`(SLURM等向け)として完了 |
+| GPU バックエンド | 高次元・大規模での速度改善(未着手) |
+| Integer / Categorical の TR 対応 | 現在は [0,1] 正規化で近似的に対応(未着手) |
 
 ---
 

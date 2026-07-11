@@ -21,6 +21,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   P(feasible) weighting (signed scores would otherwise favor
   predicted-infeasible points); non-finite predictions rank last
   deterministically.
+- **`"ts"` re-validated on a real-CFD-like problem (NeuralFoil, 16D CST
+  airfoil, Cl/Cd)**: `"ei"` wins clearly there (ts/ei geometric mean
+  0.86–0.92, `"ts"` losing 2/8 seeds at both noise levels), reversing the
+  synthetic-suite result above. `"ts"`'s exploration bonus pays off on
+  multimodal problems but not on smoother, near-unimodal response surfaces —
+  prefer `config={"acquisition": "ei"}` for CFD-shaped objectives.
 
 ### Added
 
@@ -43,7 +49,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Cl/Cd optimization validated on SU2 (K-2-8).
 - **Save/resume**: `engine.save("study.zip")` / `TRustBOEngine.load(...)`.
 - **Optuna sampler** integration (`trust_bo.integrations.optuna`).
-- 91 tests passing (63 Python + 28 Rust), CPU-only.
+- `config={"phase2_ls_prior": True}` (default `False`): switches the Phase 2
+  micro-GP's length-scale search from MLE to a dimension-scaled LogNormal MAP
+  prior (Hvarfner et al. 2024 / BoTorch reference values, shifted into
+  trust-region-local coordinates). Evaluated on the 16-case synthetic suite
+  (256 runs) and found to have no benefit (regret ratio 0.996) — kept behind
+  the flag, off by default, for reference rather than removed.
+- 110 tests total (69 passed + 2 skipped Python, 39 passed Rust), CPU-only.
 
 ### Deprecated
 

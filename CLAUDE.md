@@ -26,12 +26,12 @@ GPではなく **MLPブートストラップ・アンサンブルが主サロゲ
 7. (オプション `enable_phase2`) TR枯渇後、**Matern5/2残差マイクロGP**(gp.rs, f64, 自前Cholesky)
    でインカンベント近傍を精密化("tandem")
 
-## ファイルマップ(src/ 約2900行)
+## ファイルマップ(src/ 約2700行)
 
 | ファイル | 行数 | 内容 |
 |---|---|---|
 | lib.rs | ~800 | propose() 制御フロー全体 + propose_mo(2目的EHVI) + PyO3 |
-| gp.rs | 292 | Phase2用マイクロGP(ハイパラはランダム探索MLE、>10Dでisotropic) |
+| gp.rs | 374 | Phase2用マイクロGP(ハイパラ探索はMLE、`phase2_ls_prior`でMAP切替可・デフォルトoff。>10Dでisotropic) |
 | cem.rs | 290 | CEM本体3種(通常/GP合成/EHVI) |
 | tr.rs | 265 | TR更新・TuRBO-M・リスタート |
 | acquisition.rs | ~260 | ts/ei/ucb + 閉形式2D-EHVI |
@@ -47,9 +47,9 @@ tandem.py(scipy版Phase2、旧)、integrations/optuna.py(sampler、acquisition="
 ## 検証コマンド
 
 ```bash
-source ~/.cargo/env && cargo test --release   # Rust 35テスト
+source ~/.cargo/env && cargo test --release   # Rust 39テスト
 .venv/bin/maturin develop --release            # ビルド+インストール(~30s)
-.venv/bin/python -m pytest tests/ -q           # Python 69テスト(~6分、要 scipy/sklearn)
+.venv/bin/python -m pytest tests/ -q           # Python 71テスト(~6分、要 scipy/sklearn)
 ```
 ベンチ: benchmarks/midbudget_benchmark.py が合成関数のA/B標準(SMOKE=1で1分スモーク)。
 エンジンA/Bのコツ: 新機能はconfigフラグで入れ、**まずデフォルト挙動のビット一致を確認**してから比較する
@@ -57,9 +57,11 @@ source ~/.cargo/env && cargo test --release   # Rust 35テスト
 
 ## 2026-07 性能改善の結果(コミット d6a02f5)— 再検討の重複を避けるため必読
 
-採用(検証: Ackley/Rastrigin/Rosenbrock/Levy × 50/100D × ノイズ{0,5%} × 8シード, 予算250):
+採用(検証: Ackley/Rastrigin/Rosenbrock/Levy × 50/100D × ノイズ{0,5%} × 8シード, 予算250。
+詳細データは BENCHMARK.md §14):
 - **rayon並列CEM+学習テンソル巻き上げ**: ask()約2倍高速、同シードでビット一致
-- **獲得関数デフォルト "ts"**: EI比リグレット幾何平均10–14%改善(27勝5敗/32)
+- **獲得関数デフォルト "ts"**: EI比リグレット幾何平均10–14%改善(27勝5敗/32)。
+  ただし合成多峰関数限定の結果 — 下記「実CFDでのts再検証」参照
 
 実装したが**実測で棄却済み**(文献で有望でも本構成では効かない — 再実装前にこの数値を見よ):
 - ノイズ耐性TR成功閾値: 比1.004(効果なし) / ランク重み+平滑化CEM: 1.021(悪化)
@@ -67,12 +69,12 @@ source ~/.cargo/env && cargo test --release   # Rust 35テスト
 - コヒーレント単一メンバーTS: **1.375(大幅悪化)** — "ts"の乱択ばらつき自体が探索に効いている
 - Phase2 GPのLogNormal長さスケール事前(Hvarfner 2024, `phase2_ls_prior`フラグとして実装済み・
   デフォルトoff): 比0.996(効果なし、8勝/128、Phase2発火45/128) — 2026-07-11に棄却。
-  局所残差GPには論文前提(グローバル高次元GP)が当てはまらない。詳細 BENCHMARK.md §14.1
+  局所残差GPには論文前提(グローバル高次元GP)が当てはまらない。詳細 BENCHMARK.md §15.1
 
 **実CFDでのts再検証(2026-07-11)**: NeuralFoil CST 16D(Cl/Cd)では**EIがTSに明確勝利**
 (ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。合成多峰関数と逆転 — TSの探索ボーナスは
 多峰性問題限定。デフォルトは"ts"のままだが、**滑らかな実CFD系では acquisition="ei" 推奨**。
-詳細 BENCHMARK.md §14.2
+詳細 BENCHMARK.md §15.2
 
 未着手の有望案: SAASBO比較、SU2(実RANS)でのts/ei確認。
 

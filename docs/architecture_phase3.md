@@ -1,5 +1,10 @@
 # TRust-BO — Phase 3 アーキテクチャ解説
 
+> **歴史的記録**: これは Phase 3 時点(2026-06 以前)のアーキテクチャスナップショット。
+> multi-TR(TuRBO-M)、rayon 並列化、Phase 2(Tandem Residual-GP)、多目的 EHVI、
+> 実 CFD パイプライン(NeuralFoil/SU2)は本書執筆後に実装済み。現在のアーキテクチャは
+> `CLAUDE.md` と `docs/DEVELOPMENT.md` を参照。
+
 ## 1. 全体構成
 
 ```
