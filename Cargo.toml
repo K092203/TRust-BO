@@ -1,6 +1,6 @@
 [package]
 name = "trust-bo"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Trust Region Bayesian Optimization engine (TuRBO-style) with a CPU-only Rust core, exposed to Python via PyO3"
 license = "MIT"

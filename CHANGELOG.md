@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-11
+
 ### Changed
 
 - **Default acquisition is now `"ts"`** (Thompson-sampling-style randomized
@@ -30,6 +32,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `config={"phase2_ls_prior": True}` (default `False`): switches the Phase 2
+  micro-GP's length-scale search from MLE to a dimension-scaled LogNormal MAP
+  prior (Hvarfner et al. 2024 / BoTorch reference values, shifted into
+  trust-region-local coordinates). Evaluated on the 16-case synthetic suite
+  (256 runs) and found to have no benefit (regret ratio 0.996) — kept behind
+  the flag, off by default, for reference rather than removed.
+
+### Docs
+
+- Resolved staleness/duplication introduced by the above findings across
+  CLAUDE.md, docs/BENCHMARK.md, docs/ALGORITHM.md, docs/DEVELOPMENT.md,
+  docs/PERFORMANCE_ASSESSMENT.md, docs/ROADMAP.md, and README.md; flagged
+  historical planning docs as superseded snapshots.
+- 110 tests total (69 passed + 2 skipped Python, 39 passed Rust), CPU-only.
+
+## [0.1.0] - 2026-06-14
+
+### Added
+
 - **Trust Region Bayesian Optimization engine written in Rust** (TuRBO-style),
   exposed to Python via PyO3. No GPU, no BLAS/LAPACK, no cloud required.
 - **MLP Bootstrap Ensemble surrogate** (5 members, warm-started between rounds)
@@ -49,13 +70,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Cl/Cd optimization validated on SU2 (K-2-8).
 - **Save/resume**: `engine.save("study.zip")` / `TRustBOEngine.load(...)`.
 - **Optuna sampler** integration (`trust_bo.integrations.optuna`).
-- `config={"phase2_ls_prior": True}` (default `False`): switches the Phase 2
-  micro-GP's length-scale search from MLE to a dimension-scaled LogNormal MAP
-  prior (Hvarfner et al. 2024 / BoTorch reference values, shifted into
-  trust-region-local coordinates). Evaluated on the 16-case synthetic suite
-  (256 runs) and found to have no benefit (regret ratio 0.996) — kept behind
-  the flag, off by default, for reference rather than removed.
-- 110 tests total (69 passed + 2 skipped Python, 39 passed Rust), CPU-only.
+- 91 tests passing (63 Python + 28 Rust).
 
 ### Deprecated
 
