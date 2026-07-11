@@ -75,11 +75,21 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
   局所残差GPには論文前提(グローバル高次元GP)が当てはまらない。詳細 BENCHMARK.md §15.1
 
 **実CFDでのts再検証(2026-07-11)**: NeuralFoil CST 16D(Cl/Cd)では**EIがTSに明確勝利**
-(ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。合成多峰関数と逆転 — TSの探索ボーナスは
-多峰性問題限定。デフォルトは"ts"のままだが、**滑らかな実CFD系では acquisition="ei" 推奨**。
-詳細 BENCHMARK.md §15.2
+(ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。SU2実RANS(H-2同条件、3シード)でも
+**ts/ei比0.353・ts 0勝3敗**で確定。合成多峰関数と逆転 — TSの探索ボーナスは多峰性問題限定。
+デフォルトは"ts"のままだが、**実CFD系では acquisition="ei" 推奨**。詳細 BENCHMARK.md §15–16
 
-未着手の有望案: SAASBO比較、SU2(実RANS)でのts/ei確認。
+**獲得関数ミックス+Phase2早期発火(2026-07-11, BENCHMARK.md §16)**:
+- `acquisition="ts_ei"`(バッチ前半EI+残りTS、単一TR限定): 万能デフォルトの資格なしだが
+  **ノイズあり(5%)CFD様問題では全アーム最良**(NeuralFoilでei比+9%)。ニッチ用途フラグとして残置
+- `phase2_early_frac`(TR辺長≤l_init×fracでPhase2遷移許可): **enable_phase2構成の明確な改善**
+  (0.25でts比GM 1.372全体/1.129 rosenbrock除外、84勝/128)。デフォルト"ts"はEI停滞シグナルを
+  持たずPhase2発火が45/128に留まるのが弱点で、これを補う。デフォルト0.0のまま、
+  **enable_phase2使用時は0.25推奨**。教訓: Phase2有効構成では「localに入れること」が
+  獲得関数の差より支配的
+
+未着手の有望案: SAASBO比較、マルチフィデリティ(Python層カスケード案あり、ROADMAP参照)、
+dual TR(n_trs=2)のA/B検証、phase2_early_fracの実CFD検証+v0.3でのデフォルト化判断。
 
 ## 落とし穴・不変条件
 

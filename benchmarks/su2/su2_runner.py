@@ -23,7 +23,9 @@ import numpy as np
 
 from airfoil_mesh import generate_omesh, mesh_quality, write_su2
 
-SU2_RUN_DEFAULT = "/home/k0903/su2/install/bin"
+# 環境変数 SU2_RUN / SU2_WORK で上書き可能 (未設定時は従来のパスのまま)
+SU2_RUN_DEFAULT = os.environ.get("SU2_RUN", "/home/k0903/su2/install/bin")
+SU2_WORK_DEFAULT = os.environ.get("SU2_WORK", "/home/k0903/su2/work")
 
 # ── RANS 設定テンプレート ────────────────────────────────────────────────────
 # {aoa} {mach} {re} {iter} {mesh} {history} はラッパーが埋める。
@@ -122,7 +124,7 @@ class SU2Settings:
     n_threads: int = 4
     timeout_s: float = 1800.0
     keep_workdir: bool = False
-    workroot: str = field(default="/home/k0903/su2/work")
+    workroot: str = field(default_factory=lambda: SU2_WORK_DEFAULT)
 
 
 def _parse_clcd(history_csv: str) -> tuple[float | None, float | None, int]:

@@ -72,6 +72,10 @@ pub struct ProposeConfig {
     /// デフォルト false で既存挙動 (MLE) と完全一致。
     #[serde(default)]
     pub phase2_ls_prior: bool,
+    /// Phase 2 早期発火: TR 辺長が l_init × この値以下になったら TR 枯渇を待たず
+    /// local 遷移を許可する。0.0 (デフォルト) で無効 = 既存挙動 (tr_exhausted / EI停滞のみ)。
+    #[serde(default)]
+    pub phase2_early_frac: f32,
 }
 
 fn default_n_trs() -> usize {

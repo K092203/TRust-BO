@@ -47,11 +47,25 @@ impl Engine {
 
         match config.acquisition.as_str() {
             "ucb" | "ei" | "ts" => {}
+            // ts_ei: バッチ前半を EI、残りを TS で選ぶミックス (単一 TR 限定)
+            "ts_ei" if config.n_trs == 1 => {}
+            "ts_ei" => {
+                return Err(PyValueError::new_err(
+                    "acquisition 'ts_ei' requires n_trs == 1".to_string(),
+                ))
+            }
             other => {
                 return Err(PyValueError::new_err(format!(
-                    "unknown acquisition '{other}': expected 'ucb', 'ei', or 'ts'"
+                    "unknown acquisition '{other}': expected 'ucb', 'ei', 'ts', or 'ts_ei'"
                 )))
             }
+        }
+        // phase2_early_frac は「TR が初期辺長の何割まで縮んだら」の比率。[0,1) のみ許可
+        if !(0.0..1.0).contains(&config.phase2_early_frac) {
+            return Err(PyValueError::new_err(format!(
+                "phase2_early_frac must be in [0, 1), got {}",
+                config.phase2_early_frac
+            )));
         }
 
         // feasible/infeasible を分離 (infeasible は feasibility surrogate に使う)
@@ -209,9 +223,15 @@ impl Engine {
         } else {
             3 * config.n_init
         };
+        // phase2_early_frac > 0: TR 辺長が l_init×frac 以下なら枯渇を待たず local 遷移を許可。
+        // tr_exhausted とは別変数にする (ガードで local に入れない場合に TR を再起動させないため)
+        let early_trigger = phase2_armed
+            && config.phase2_early_frac > 0.0
+            && !tr_states.is_empty()
+            && tr_states[0].side_length <= config.l_init * config.phase2_early_frac;
         let enter_local = phase2_armed
             && feasible_params.len() >= min_evals
-            && (sticky_local || tr_exhausted || config.stagnation_count >= 5);
+            && (sticky_local || tr_exhausted || early_trigger || config.stagnation_count >= 5);
 
         // ガードで local に入れなかった inactive TR は従来どおり再起動 (既存挙動維持)
         if tr_exhausted && !enter_local {
@@ -437,8 +457,9 @@ impl Engine {
         }
 
         // ── Acquisition スコア計算 ────────────────────────────────────────────────
+        let is_ts_ei = config.acquisition == "ts_ei";
         let (pool_means, pool_stds) = ensemble.predict(&pool, config.n_dims);
-        let mut acq_scores = if config.acquisition == "ts" {
+        let mut acq_scores = if config.acquisition == "ts" || is_ts_ei {
             let mut rng = StdRng::seed_from_u64(seed.wrapping_add(0x7502_5ca1));
             acquisition::ts(&pool_means, &pool_stds, &mut rng)
         } else {
@@ -450,10 +471,16 @@ impl Engine {
                 &config.acquisition,
             )
         };
+        // ts_ei: EI スコアも並行計算 (バッチ前半の選択と停滞検出に使う)
+        let mut ei_scores = if is_ts_ei {
+            acquisition::ei(&pool_means, &pool_stds, best_norm)
+        } else {
+            vec![]
+        };
 
         // 制約付き: EI × P(feasible) で infeasible 領域を抑制
         if let Some(ref feas_surr) = feasibility_ensemble {
-            if config.acquisition == "ts" {
+            if config.acquisition == "ts" || is_ts_ei {
                 // 符号付き TS スコアは P(feasible) 乗算前に非負へシフトする。
                 // f32::MIN は ts() の非有限フォールバック番兵なのでシフト対象から除外し
                 // 0 に落とす (巨大シフトによる有効スコアの精度崩壊を防ぐ)。
@@ -472,12 +499,58 @@ impl Engine {
             for (s, f) in acq_scores.iter_mut().zip(feas_means.iter()) {
                 *s *= f.clamp(0.0, 1.0);
             }
+            // ts_ei の EI スコアにも同じ P(feasible) 重みを掛ける (EI は非負なのでシフト不要)
+            for (s, f) in ei_scores.iter_mut().zip(feas_means.iter()) {
+                *s *= f.clamp(0.0, 1.0);
+            }
         }
 
         // ── バッチ選択 ────────────────────────────────────────────────────────────
         let selected = if effective_n_trs == 1 {
-            // 後方互換: 既存の greedy_select をそのまま使用
-            batch::greedy_select(&pool, &acq_scores, config.batch_size, 0.1)
+            if is_ts_ei {
+                // ts_ei: バッチ前半 ceil(b/2) を EI スコアで搾取的に選び、
+                // 残りを TS スコアで探索的に埋める。除外半径 0.1 は両段で共通
+                // (前半で選んだ点とその近傍は後半の候補から外す)。
+                let n_ei = config.batch_size.div_ceil(2);
+                let no_excl = vec![false; pool.len()];
+                let first = batch::greedy_select_partial(&pool, &ei_scores, n_ei, 0.1, &no_excl);
+                let mut excluded = vec![false; pool.len()];
+                for &i in &first {
+                    excluded[i] = true;
+                    for j in 0..pool.len() {
+                        if !excluded[j] {
+                            let dist: f32 = pool[i]
+                                .iter()
+                                .zip(&pool[j])
+                                .map(|(a, b)| (a - b).powi(2))
+                                .sum::<f32>()
+                                .sqrt();
+                            if dist < 0.1 {
+                                excluded[j] = true;
+                            }
+                        }
+                    }
+                }
+                let remaining = config.batch_size.saturating_sub(first.len());
+                // 前半は EI で選んだので、報告スコアも選択根拠 (EI) に揃える
+                for &i in &first {
+                    acq_scores[i] = ei_scores[i];
+                }
+                let mut selected = first;
+                if remaining > 0 {
+                    selected.extend(batch::greedy_select_partial(
+                        &pool,
+                        &acq_scores,
+                        remaining,
+                        0.1,
+                        &excluded,
+                    ));
+                }
+                selected
+            } else {
+                // 後方互換: 既存の greedy_select をそのまま使用
+                batch::greedy_select(&pool, &acq_scores, config.batch_size, 0.1)
+            }
         } else {
             // TuRBO-M: スロット飢餓防止
             // Phase 1: 各 TR から最低 1 候補を確定採用 (飢餓防止の最小保証)
@@ -564,13 +637,23 @@ impl Engine {
             }
         }
 
-        // EI 停滞検出 (Phase 2 遷移シグナルの一つ)。ei 以外の獲得関数では無効。
+        // EI 停滞検出 (Phase 2 遷移シグナルの一つ)。ei / ts_ei (EIスコア側) で有効。
         let max_acq = acq_scores
             .iter()
             .cloned()
             .filter(|s| s.is_finite())
             .fold(f32::MIN, f32::max);
-        let stagnation_count = if config.acquisition == "ei" && max_acq < 1e-5 {
+        let stagnated = if is_ts_ei {
+            let max_ei = ei_scores
+                .iter()
+                .cloned()
+                .filter(|s| s.is_finite())
+                .fold(f32::MIN, f32::max);
+            max_ei < 1e-5
+        } else {
+            config.acquisition == "ei" && max_acq < 1e-5
+        };
+        let stagnation_count = if stagnated {
             config.stagnation_count + 1
         } else {
             0

@@ -22,6 +22,7 @@ TRust-BO+P2 を BoTorch_TuRBO・HEBO・Random と比較した実験記録。
 13. [Phase K-2-8: 実 CFD 多目的最適化（SU2 RANS, Cl↑+Cd↓）](#13-phase-k-2-8-実-cfd-多目的最適化su2-rans-clcd)
 14. [rayon 並列化 + 獲得関数デフォルト "ts" 化](#14-2026-07-11-rayon-並列化--獲得関数デフォルトts化コミット-d6a02f5)
 15. [Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B](#15-2026-07-11-phase-2-lognormal-長さスケール事前--neuralfoil-での獲得関数-ab)
+16. [SU2 実RANSでの ts/ei 再確認 + ts_ei / phase2_early_frac A/B](#16-2026-07-11-su2-実ransでの-tsei-再確認--獲得関数ミックスphase2早期発火-ab)
 
 ---
 
@@ -700,3 +701,69 @@ H-2 の単目的（Cl/Cd 最大化）を 2 目的（Cl 最大化 + Cd 最小化�
 - 判定: **滑らかで単峰性の強い実 CFD 様問題では EI が明確に優位**（合成多峰関数とは逆転）。
   TS の乱択ばらつきによる探索ボーナスは多峰性問題でのみ効く。
   デフォルトは "ts" のまま維持するが、CFD 系の実務では `acquisition="ei"` を推奨。
+
+## 16. 2026-07-11: SU2 実RANSでの ts/ei 再確認 + 獲得関数ミックス/Phase2早期発火 A/B
+
+### 16.1 SU2 実RANS (16D CST, Cl/Cd, budget 100) での ts vs ei — EI 優位を実RANSでも確認
+
+- 設定: §12 (H-2) と同条件 (Ma=0.3 Re=3e6 α=2°, n_init=12, batch=8, 8並列, ITER=4000)、
+  `enable_phase2=True`、seed {0,1,2}。ハーネス: `benchmarks/su2_ts_ab_benchmark.py`、
+  出典: `su2_ts_ab_results.csv`。SU2 は v8.5.0 prebuilt omp を再セットアップ
+  (`su2_runner.py` のパスを環境変数 `SU2_RUN`/`SU2_WORK` で上書き可能に変更)。
+- 結果 (best Cl/Cd):
+
+| arm | seed0 | seed1 | seed2 | median | 物理域(<300) |
+|-----|-------|-------|-------|--------|--------------|
+| ts  | 60.0  | 188.6 | 38.2  | 60.0   | 3/3 |
+| ei  | 89.4  | 561.1⚠ | 196.6 | 196.6  | 2/3 |
+
+- ペア幾何平均比 ts/ei = **0.353**、ts **0勝3敗**。非物理の seed1 (⚠ CD≈0 アーティファクト、
+  §12.5 既知) を除いた物理域内ペアでも ei が +49% / +414% で全勝。
+- 判定: **実RANSでも EI 明確優位** (NeuralFoil §15.2 の 0.86–0.92 より差が大きい)。
+  「CFD系では acquisition="ei"」推奨を実RANSで確定。3 seeds のみの限界は残る。
+  副作用: ei は探索が搾取的なぶん非物理アーティファクト (薄翼 CD≈0) を突く傾向 —
+  最小厚み制約 (§12.6) の必要性を再確認。
+
+### 16.2 獲得関数ミックス "ts_ei" + Phase2早期発火 phase2_early_frac の A/B
+
+新機能 (いずれもデフォルト off でビット一致確認済み):
+- `acquisition="ts_ei"`: バッチ前半 ceil(b/2) を EI、残りを TS で選択 (単一TR限定)。
+  EI 停滞検出も有効化される。
+- `phase2_early_frac=f`: TR 辺長 ≤ l_init×f で Phase 2 の local 遷移を許可 (f=0 で無効)。
+
+**合成スイート** (4関数 × {50,100}D × ノイズ{0,5%} × 8 seeds、budget 250、
+全アーム `enable_phase2=True`。ハーネス: `benchmarks/mix_ab_benchmark.py`、
+出典: `mix_ab_results.csv`):
+
+| 比較 (リグレットGM比 >1で左優位) | 全問題 | rosenbrock除外 | 左アームの勝数 |
+|---|---|---|---|
+| ei vs ts | 1.457 | 1.061 | 89/128 |
+| **ts_early (ts+early_frac=0.25) vs ts** | **1.372** | **1.129** | 84/128 |
+| ts_ei vs ts | 1.397 | 0.960 | 61/128 |
+| ei vs ts_early | 1.062 | 0.939 | 50/128 |
+
+- **支配的要因は Phase 2 発火率**: ts は EI 停滞シグナルを持たず発火 45/128 に対し、
+  ei / ts_ei は 128/128、ts_early は 116/128。rosenbrock (滑らかな谷) では
+  残差GPが 3〜14 倍のリグレット改善を叩き出し GM を押し上げる。
+- 2026-07 の「ts が ei に 10–14% 優位」(§14) と矛盾しない — あれは Phase 2 無効での
+  獲得関数単体比較。**Phase 2 有効構成では「local に入れること」が獲得関数の差より大きい**。
+
+**NeuralFoil 16D CST** (§15.2 と同条件に ts_ei アームを追加):
+
+| noise | ts_ei/ei GM | ts_ei/ts GM | 備考 |
+|-------|------------|------------|------|
+| 0%    | 0.938      | 1.025      | ei が最良 |
+| 5%    | **1.091**  | **1.266**  | **ts_ei が全アーム最良** |
+
+### 16.3 判定
+
+- **phase2_early_frac**: `enable_phase2=True` 構成での明確な改善
+  (vs ts: GM 1.372 全体 / 1.129 rosenbrock除外、84勝/128)。**デフォルト値は 0.0 のまま**
+  (ビット一致規約、かつ検証は合成のみ) だが、**enable_phase2 使用時は 0.25 を推奨**。
+  実CFDでの検証後に v0.3 でのデフォルト化を検討。
+- **ts_ei**: 万能デフォルトの資格なし (合成 rosenbrock除外で ts 比 -4%、NeuralFoil ノイズなしで
+  ei 比 -6%)。ただし**ノイズあり CFD 様問題では全アーム最良** (ei 比 +9%) — ノイズの大きい
+  実測・実験ループでの選択肢としてフラグを残す。
+- **獲得関数の実務推奨 (確定)**: 実CFD (滑らか・決定的〜低ノイズ) = `"ei"`。
+  ノイズ大 (数%以上) の CFD/実験 = `"ts_ei"` を検討。合成多峰 (Phase2なし) = `"ts"`。
+  `enable_phase2=True` なら常に `phase2_early_frac=0.25` を併用。

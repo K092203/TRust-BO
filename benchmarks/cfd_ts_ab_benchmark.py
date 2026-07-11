@@ -32,7 +32,7 @@ from cfd_neuralfoil_benchmark import (
 )
 
 
-ARMS = ("ts", "ei")
+ARMS = tuple(os.environ.get("ARMS", "ts,ei").split(","))
 NOISES = [0.0, 0.05]
 SEEDS = range(8)
 BUDGET = 200

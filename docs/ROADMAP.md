@@ -311,3 +311,37 @@ Month 3〜4  : [H-2-5〜H-2-7] SU2 本番ベンチ（G と統合）
 Month 4     : [K-2-1〜K-2-5] EHVI Rust 実装
 Month 5     : [K-2-6〜K-2-7] ベンチ・CFD への適用
 ```
+
+---
+
+## 未着手バックログ(2026-07-11 更新)
+
+A/G/H/K 完了後の候補。優先度・計画は 2026-07-11 のセッションで整理
+(実測結果の背景は `BENCHMARK.md` §14–16)。
+
+### MF: マルチフィデリティ(最大の伸びしろ・アーキ変更あり)
+- Rust コア不変のまま Python 層カスケードで先行プロトタイプ:
+  `multifidelity.py`(新規)で低忠実度エンジン(NeuralFoil/粗メッシュ)に予算の大半を
+  消化させ、上位候補+履歴を高忠実度エンジン(SU2)へシード。値スケール差は z-score が
+  吸収、fidelity 間バイアス補正は Phase2 型残差 GP を使うのが第 2 段階。
+- 検証: NeuralFoil→SU2 の実 CFD カスケード。見積り: プロトタイプ+A/B で 1–2 セッション。
+
+### DT: dual TR(n_trs=2)の A/B 検証(実装済み機能の未検証項目)
+- 実装ゼロ。`n_trs=2` vs `n_trs=1` を合成スイート(Ackley/Rastrigin × 50/100D × 8シード、
+  budget 250)で A/B。仮説: 中予算では履歴分割の害で n_trs=1 が勝つ(TuRBO 論文の
+  多 TR 利得は大予算・超多峰で顕著)。±3% 以内なら「差なし」を記録して閉じる。
+
+### P2D: phase2_early_frac の実 CFD 検証と v0.3 デフォルト化判断
+- 合成では enable_phase2 構成で ts 比 GM 1.372(§16.2)。NeuralFoil/SU2 でも
+  改善が出れば v0.3 で enable_phase2 時のデフォルトを 0.25 に変更
+  (ビット挙動が変わるため minor バージョン境界で行う)。
+
+### RW: macOS Intel (x86_64) wheel の追加
+- 現状 v0.2.0 の macOS wheel は arm64 のみ(GitHub の macos-latest ランナーが
+  Apple Silicon 化したため)。`release.yml` の wheel 行列に
+  `--target x86_64-apple-darwin` のクロスコンパイル(rustup ターゲット追加)を入れる。
+  非推奨進行中の macos-13 ランナー追加より持続的。
+- 検証: `workflow_dispatch` で空振りビルド → x86_64 wheel が成果物に載ることを確認 →
+  次回リリースに自然に含める。
+
+### SB: SAASBO ベンチマーク比較(Issue #2、従来からの継続)
