@@ -125,7 +125,9 @@ SAASBO比較(WSL環境ではメモリ不足で不可)。
 
 docs/ALGORITHM.md(アルゴリズム全編・設定表) / DEVELOPMENT.md(開発手順・設定表・フェーズ史) /
 PERFORMANCE_ASSESSMENT.md(**正直な性能評価**: 低次元・小予算・滑らかな問題ではBoTorch/HEBOが上、
-50D+/ノイズ/制約/実CFDで5–10倍速×同等以上の品質が本領) / BENCHMARK.md / ROADMAP.md
+50D+/ノイズ/制約/実CFDで5–10倍速×同等以上の品質が本領) / BENCHMARK.md / ROADMAP.md /
+AI_OPERATIONS.md(マルチエージェント運用の実データ・役割設計の理由・損益の経験則。
+下記規約の根拠データはここ)
 
 ## エージェント運用規約(別プロジェクトのAGENTS.mdから抽出し、2026-07の開発で実運用した方針)
 
