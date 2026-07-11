@@ -76,6 +76,11 @@ pub struct ProposeConfig {
     /// local 遷移を許可する。0.0 (デフォルト) で無効 = 既存挙動 (tr_exhausted / EI停滞のみ)。
     #[serde(default)]
     pub phase2_early_frac: f32,
+    /// RAASP 型次元マスク (Xu et al. ICML 2025): グローバル CEM のサンプル生成で
+    /// 各次元を確率 min(1, 20/d) でのみ摂動し、残りは CEM 平均に固定する。
+    /// 高次元での全次元同時摂動による局所性崩壊への対処。デフォルト false で既存挙動。
+    #[serde(default)]
+    pub cem_dim_mask: bool,
 }
 
 fn default_n_trs() -> usize {

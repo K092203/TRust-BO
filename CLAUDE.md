@@ -73,6 +73,11 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 - Phase2 GPのLogNormal長さスケール事前(Hvarfner 2024, `phase2_ls_prior`フラグとして実装済み・
   デフォルトoff): 比0.996(効果なし、8勝/128、Phase2発火45/128) — 2026-07-11に棄却。
   局所残差GPには論文前提(グローバル高次元GP)が当てはまらない。詳細 BENCHMARK.md §15.1
+- dual TR(`n_trs=2`, 中予算250): tr1/tr2比**0.841(16%悪化)**、39勝/128 — 2026-07-12に棄却。
+  履歴分割の害が支配的。多TRは大予算専用。詳細 §17
+- RAASP型次元マスク(`cem_dim_mask`フラグ、Papenmeier ICML2025のCEM適応): 同予算ei比
+  0.971(58勝/128、利得なし) — 2026-07-12に棄却。TRが既に局所性を担保する構成では
+  次元マスクの出番がない。初版のσ人工収縮欠陥はsol監査で検出→修正済みの上での判定。詳細 §18.3
 
 **実CFDでのts再検証(2026-07-11)**: NeuralFoil CST 16D(Cl/Cd)では**EIがTSに明確勝利**
 (ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。SU2実RANS(H-2同条件、3シード)でも
@@ -88,8 +93,16 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
   **enable_phase2使用時は0.25推奨**。教訓: Phase2有効構成では「localに入れること」が
   獲得関数の差より支配的
 
-未着手の有望案: SAASBO比較、マルチフィデリティ(Python層カスケード案あり、ROADMAP参照)、
-dual TR(n_trs=2)のA/B検証、phase2_early_fracの実CFD検証+v0.3でのデフォルト化判断。
+**マルチフィデリティ・カスケード(2026-07-12, BENCHMARK.md §18)**: `CascadeMFEngine`
+(python/trust_bo/multifidelity.py, Rustコア不変)を実装・採用。NeuralFoil CST 16D
+(LF=xsmall/HF=xxxlarge)で **HF30評価がHF直接100評価をGM 1.671・8/8勝で上回る =
+評価回数70%削減を品質+67%で達成**(CFD系ユースケース)。ただしLF/HF相関が高い理想ペアでの
+結果 — SU2実ペア検証は未実施。単一忠実度の合成問題では予算75はbase250のGM 0.46止まりで
+**70%削減は不可能と実証**(忠実度軸が唯一の経路)。
+
+未着手の有望案: SU2実ペアでのカスケード検証、入力拡張MF-MLP(LF予測をサロゲート特徴へ)、
+bilog出力変換、アンサンブルσ校正、phase2_early_fracの実CFD検証+v0.3デフォルト化判断、
+SAASBO比較(WSL環境ではメモリ不足で不可)。
 
 ## 落とし穴・不変条件
 

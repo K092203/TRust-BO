@@ -31,19 +31,54 @@ pub fn cem_pool(
     // halt_eps = L × 1e-3; sigma_init = L/6  →  halt_eps = sigma_init × 6e-3
     let halt_eps = (sigma_init * 6e-3).max(1e-8);
 
+    // RAASP 型次元マスク (Papenmeier et al. ICML 2025 の知見の CEM 適応):
+    // 有効時は各次元を確率 p でのみ摂動 (残りは mu に固定、最低 1 次元は摂動保証)。
+    // モーメント更新は「その次元を実際に摂動した elite」のみで行い (不足時は旧値保持)、
+    // 非摂動値混入による σ の人工収縮 (≈√p 倍/反復) を防ぐ。
+    // マスクされた次元はガウス乱数を消費しない。フラグ off は従来と完全同一パス。
+    let mask_p = if config.cem_dim_mask {
+        (20.0 / n_dims as f32).min(1.0)
+    } else {
+        1.0
+    };
+
     let mut best_pool: Vec<Vec<f32>> = vec![init_mu.to_vec()];
     for _ in 0..config.n_cem_iters {
+        // perturbed[i][j]: 候補 i が次元 j を摂動したか (mask off 時は使わない)
+        let mut perturbed: Vec<Vec<bool>> = Vec::new();
         let candidates: Vec<Vec<f32>> = (0..config.n_cem_samples)
             .map(|_| {
-                (0..n_dims)
+                if !config.cem_dim_mask {
+                    return (0..n_dims)
+                        .map(|j| {
+                            let u1 = rng.gen::<f32>().max(1e-7);
+                            let u2 = rng.gen::<f32>();
+                            let z = (-2.0 * u1.ln()).sqrt()
+                                * (2.0 * std::f32::consts::PI * u2).cos();
+                            (mu[j] + sigma[j] * z).clamp(bounds_lo[j], bounds_hi[j])
+                        })
+                        .collect();
+                }
+                let mut mask: Vec<bool> = (0..n_dims).map(|_| rng.gen::<f32>() < mask_p).collect();
+                if !mask.iter().any(|&m| m) {
+                    // 最低 1 次元は摂動する (全固定候補は情報ゼロ)
+                    let j = rng.gen_range(0..n_dims);
+                    mask[j] = true;
+                }
+                let cand = (0..n_dims)
                     .map(|j| {
+                        if !mask[j] {
+                            return mu[j].clamp(bounds_lo[j], bounds_hi[j]);
+                        }
                         let u1 = rng.gen::<f32>().max(1e-7);
                         let u2 = rng.gen::<f32>();
                         let z =
                             (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
                         (mu[j] + sigma[j] * z).clamp(bounds_lo[j], bounds_hi[j])
                     })
-                    .collect()
+                    .collect();
+                perturbed.push(mask);
+                cand
             })
             .collect();
 
@@ -57,17 +92,36 @@ pub fn cem_pool(
         let mut indexed: Vec<(usize, f32)> = scores.into_iter().enumerate().collect();
         indexed.sort_unstable_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
 
-        best_pool = indexed[..elite_k.min(indexed.len())]
+        let elite_idx: Vec<usize> = indexed[..elite_k.min(indexed.len())]
             .iter()
-            .map(|(i, _)| candidates[*i].clone())
+            .map(|(i, _)| *i)
             .collect();
+        best_pool = elite_idx.iter().map(|&i| candidates[i].clone()).collect();
 
-        for j in 0..n_dims {
-            let mu_new = best_pool.iter().map(|c| c[j]).sum::<f32>() / elite_k as f32;
-            let var = best_pool.iter().map(|c| (c[j] - mu_new).powi(2)).sum::<f32>()
-                / elite_k as f32;
-            mu[j] = mu_new;
-            sigma[j] = var.sqrt().max(1e-8);
+        if !config.cem_dim_mask {
+            for j in 0..n_dims {
+                let mu_new = best_pool.iter().map(|c| c[j]).sum::<f32>() / elite_k as f32;
+                let var = best_pool.iter().map(|c| (c[j] - mu_new).powi(2)).sum::<f32>()
+                    / elite_k as f32;
+                mu[j] = mu_new;
+                sigma[j] = var.sqrt().max(1e-8);
+            }
+        } else {
+            for j in 0..n_dims {
+                // 次元 j を実際に摂動した elite のみでモーメント更新 (2 点未満は旧値保持)
+                let vals: Vec<f32> = elite_idx
+                    .iter()
+                    .filter(|&&i| perturbed[i][j])
+                    .map(|&i| candidates[i][j])
+                    .collect();
+                if vals.len() >= 2 {
+                    let mu_new = vals.iter().sum::<f32>() / vals.len() as f32;
+                    let var = vals.iter().map(|v| (v - mu_new).powi(2)).sum::<f32>()
+                        / vals.len() as f32;
+                    mu[j] = mu_new;
+                    sigma[j] = var.sqrt().max(1e-8);
+                }
+            }
         }
 
         if sigma.iter().cloned().fold(0f32, f32::max) < halt_eps {

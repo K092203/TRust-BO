@@ -314,34 +314,36 @@ Month 5     : [K-2-6〜K-2-7] ベンチ・CFD への適用
 
 ---
 
-## 未着手バックログ(2026-07-11 更新)
+## 未着手バックログ(2026-07-12 更新)
 
-A/G/H/K 完了後の候補。優先度・計画は 2026-07-11 のセッションで整理
-(実測結果の背景は `BENCHMARK.md` §14–16)。
+実測結果の背景は `BENCHMARK.md` §14–18。完了・棄却済み:
+~~MF プロトタイプ~~(`CascadeMFEngine` 実装・NeuralFoil 検証済み、§18.1)、
+~~DT~~(n_trs=2 は中予算で 16% 悪化、棄却 §17)、
+~~RW~~(macos-x86_64 クロスコンパイル追加・dispatch ビルド成功確認済み)。
 
-### MF: マルチフィデリティ(最大の伸びしろ・アーキ変更あり)
-- Rust コア不変のまま Python 層カスケードで先行プロトタイプ:
-  `multifidelity.py`(新規)で低忠実度エンジン(NeuralFoil/粗メッシュ)に予算の大半を
-  消化させ、上位候補+履歴を高忠実度エンジン(SU2)へシード。値スケール差は z-score が
-  吸収、fidelity 間バイアス補正は Phase2 型残差 GP を使うのが第 2 段階。
-- 検証: NeuralFoil→SU2 の実 CFD カスケード。見積り: プロトタイプ+A/B で 1–2 セッション。
+### MF-2: SU2 実ペアでのカスケード検証(最優先)
+- §18.1 の 70% 削減は NeuralFoil xsmall/xxxlarge という高相関ペアでの結果。
+  LF=NeuralFoil xlarge / HF=SU2 RANS の実ペアで casc30 vs hf100 を再検証する。
+  事前に LF/HF 順位相関(R²>0.75 が文献上の成立条件)を測ること。
+- `outside_frac`(0 / 0.2)と `hf_config` への early_frac 付与の 4 群 A/B も同時に。
 
-### DT: dual TR(n_trs=2)の A/B 検証(実装済み機能の未検証項目)
-- 実装ゼロ。`n_trs=2` vs `n_trs=1` を合成スイート(Ackley/Rastrigin × 50/100D × 8シード、
-  budget 250)で A/B。仮説: 中予算では履歴分割の害で n_trs=1 が勝つ(TuRBO 論文の
-  多 TR 利得は大予算・超多峰で顕著)。±3% 以内なら「差なし」を記録して閉じる。
+### MF-3: 入力拡張 MF-MLP(カスケードの発展形)
+- LF モデルの予測値を HF サロゲートの追加入力特徴として注入(NARGP 的階層、
+  arXiv:2312.02575)。surrogate.rs の入力次元変更を伴う。§18.1 を対照群にする。
+
+### CAL/BILOG: アンサンブルσ校正・bilog 出力変換(文献調査で選定済み・未実施)
+- σ校正: NLL 温度スケーリング。ts の質に直結するがσ縮小は探索を殺すリスク(要慎重 A/B)。
+- bilog: sgn(y)ln(1+|y|) をサロゲート学習前に適用(TR best_value は生値のまま)。
+  外れ値の大きい問題(rosenbrock 型)向け。
 
 ### P2D: phase2_early_frac の実 CFD 検証と v0.3 デフォルト化判断
 - 合成では enable_phase2 構成で ts 比 GM 1.372(§16.2)。NeuralFoil/SU2 でも
   改善が出れば v0.3 で enable_phase2 時のデフォルトを 0.25 に変更
   (ビット挙動が変わるため minor バージョン境界で行う)。
 
-### RW: macOS Intel (x86_64) wheel の追加
-- 現状 v0.2.0 の macOS wheel は arm64 のみ(GitHub の macos-latest ランナーが
-  Apple Silicon 化したため)。`release.yml` の wheel 行列に
-  `--target x86_64-apple-darwin` のクロスコンパイル(rustup ターゲット追加)を入れる。
-  非推奨進行中の macos-13 ランナー追加より持続的。
-- 検証: `workflow_dispatch` で空振りビルド → x86_64 wheel が成果物に載ることを確認 →
-  次回リリースに自然に含める。
+### SB: SAASBO ベンチマーク比較(Issue #2)— 本 WSL 環境ではメモリ不足で実行不可。
+  クラウド等の環境が用意できた時点で再開。
 
-### SB: SAASBO ベンチマーク比較(Issue #2、従来からの継続)
+見送り確定(2026-07-12、sol 吟味 §18.4): Gittins 獲得関数、LogEI、グローバル GP
+ハイブリッド、REI リスタート、PFN 系サロゲート、SU2 早期打ち切り(wall-clock 最適化
+として別 KPI で扱う)。
