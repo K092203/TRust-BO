@@ -33,6 +33,25 @@ pub struct MicroGp {
 /// 残差 r に Micro-GP をフィットする。panic しない。
 /// 失敗時は Err を返し、呼び出し側は global CEM へフォールバックする契約。
 pub fn fit_micro_gp(xs: &[Vec<f64>], r: &[f64], rng: &mut StdRng) -> Result<MicroGp, GpError> {
+    fit_micro_gp_opts(xs, r, rng, None)
+}
+
+/// ls_prior_shift=Some(s) で長さスケールに次元スケール LogNormal 事前を課し MLE を MAP 化する。
+/// 事前: ls ~ LogNormal(μ, σ²), μ = s + √2 + 0.5·ln(d), σ = √3
+/// (Hvarfner et al. 2024 / BoTorch 参照実装の論文値。s = ln(TR辺長) を渡すことで
+///  [0,1]^d 全域を前提とする論文設定を TR 局所座標へ平行移動する。TR が全域なら s=0)。
+/// MAP は ℓ 空間の LogNormal 密度に対して取る (Jacobian 項 −ln ℓ を含む。
+/// ln ℓ 空間の Normal 事前 MAP とは異なる規約であることに注意)。
+/// isotropic 切替 (d>10) 後も μ には元の n_dims を使う — 距離は全次元の二乗和なので
+/// 次元スケーリングは共有 ls にも必要 (論文の ARD 事前の isotropic 適応)。
+/// サンプリング範囲は [μ−2σ, μ+2σ] (事前の約95%区間) にシフトする。
+/// ls_prior_shift=None は従来 fit_micro_gp と RNG 消費列まで完全に同一パス。
+pub fn fit_micro_gp_opts(
+    xs: &[Vec<f64>],
+    r: &[f64],
+    rng: &mut StdRng,
+    ls_prior_shift: Option<f64>,
+) -> Result<MicroGp, GpError> {
     let n_dims = match xs.first() {
         Some(x) if !x.is_empty() => x.len(),
         _ => return Err(GpError::TooFewPoints),
@@ -77,7 +96,15 @@ pub fn fit_micro_gp(xs: &[Vec<f64>], r: &[f64], rng: &mut StdRng) -> Result<Micr
     // 200D で n_hypers=800 になり 544s/run になっていた問題を修正。
     let n_ls = if n_dims <= 10 { n_dims } else { 1 };
     let n_hypers = if n_dims <= 10 { 40.max(4 * n_dims) } else { 60 };
-    let (ln_ls_lo, ln_ls_hi) = ((0.05f64).ln(), (2.0f64).ln());
+    // LogNormal 事前 μ = shift + √2 + 0.5·ln d (isotropic 切替後も d は元の n_dims)
+    let prior_mu =
+        ls_prior_shift.unwrap_or(0.0) + std::f64::consts::SQRT_2 + 0.5 * (n_dims as f64).ln();
+    let prior_sigma = 3.0f64.sqrt();
+    let (ln_ls_lo, ln_ls_hi) = if ls_prior_shift.is_some() {
+        (prior_mu - 2.0 * prior_sigma, prior_mu + 2.0 * prior_sigma)
+    } else {
+        ((0.05f64).ln(), (2.0f64).ln())
+    };
     let (ln_nz_lo, ln_nz_hi) = ((1e-4f64).ln(), (1e-1f64).ln());
 
     let mut best: Option<(f64, Vec<f64>, f64, Vec<Vec<f64>>, Vec<f64>)> = None;
@@ -95,11 +122,24 @@ pub fn fit_micro_gp(xs: &[Vec<f64>], r: &[f64], rng: &mut StdRng) -> Result<Micr
         let quad: f64 = 0.5 * rn.iter().zip(&alpha).map(|(a, b)| a * b).sum::<f64>();
         let logdet: f64 = (0..n).map(|i| l[i][i].ln()).sum();
         let logml = -quad - logdet - 0.5 * n as f64 * (2.0 * std::f64::consts::PI).ln();
-        if !logml.is_finite() {
+        // MAP: ℓ 空間 LogNormal(μ, σ²) の対数密度 (σ 一定なので定数項は省略)
+        let score = if ls_prior_shift.is_some() {
+            let logprior: f64 = ls
+                .iter()
+                .map(|&l| {
+                    let z = (l.ln() - prior_mu) / prior_sigma;
+                    -l.ln() - 0.5 * z * z
+                })
+                .sum();
+            logml + logprior
+        } else {
+            logml
+        };
+        if !score.is_finite() {
             continue;
         }
-        if best.as_ref().map_or(true, |b| logml > b.0) {
-            best = Some((logml, ls, sf2, l, alpha));
+        if best.as_ref().map_or(true, |b| score > b.0) {
+            best = Some((score, ls, sf2, l, alpha));
         }
     }
 
@@ -273,6 +313,48 @@ mod tests {
         let xs = vec![vec![1.0, 2.0]; 30];
         let ys: Vec<f64> = (0..30).map(|i| i as f64).collect();
         assert_eq!(fit_micro_gp(&xs, &ys, &mut rng()).unwrap_err(), GpError::TooFewPoints);
+    }
+
+    /// ls_prior=false は fit_micro_gp と完全同一 (RNG 消費列含む)
+    #[test]
+    fn opts_false_matches_default_path() {
+        let xs: Vec<Vec<f64>> = (0..20)
+            .map(|i| vec![i as f64 / 19.0, ((i * 7 % 19) as f64) / 19.0])
+            .collect();
+        let ys: Vec<f64> = xs.iter().map(|x| (3.0 * x[0]).sin() + x[1]).collect();
+        use rand::Rng;
+        let mut r1 = rng();
+        let mut r2 = rng();
+        let a = fit_micro_gp(&xs, &ys, &mut r1).unwrap();
+        let b = fit_micro_gp_opts(&xs, &ys, &mut r2, None).unwrap();
+        assert_eq!(a.lengthscales, b.lengthscales);
+        assert_eq!(a.sf2, b.sf2);
+        assert_eq!(a.alpha, b.alpha);
+        assert_eq!(a.chol_l, b.chol_l);
+        // RNG 消費列まで同一であること
+        assert_eq!(r1.gen::<u64>(), r2.gen::<u64>());
+    }
+
+    /// LogNormal 事前 (d=20, isotropic) で fit が通り、ls が事前レンジ内に入る
+    #[test]
+    fn ls_prior_high_dim_fits_with_longer_lengthscale() {
+        let mut r = rng();
+        use rand::Rng;
+        let d = 20;
+        let xs: Vec<Vec<f64>> = (0..40)
+            .map(|_| (0..d).map(|_| r.gen::<f64>()).collect())
+            .collect();
+        let ys: Vec<f64> = xs.iter().map(|x| x.iter().sum::<f64>()).collect();
+        let gp = fit_micro_gp_opts(&xs, &ys, &mut r, Some(0.0)).expect("prior fit failed");
+        let mu = std::f64::consts::SQRT_2 + 0.5 * (d as f64).ln();
+        let sigma = 3.0f64.sqrt();
+        let ls = gp.lengthscales[0];
+        assert!(
+            ls.ln() >= mu - 2.0 * sigma && ls.ln() <= mu + 2.0 * sigma,
+            "ls={ls}"
+        );
+        let (_, var) = gp_predict(&gp, &xs[0]);
+        assert!(var.is_finite());
     }
 
     /// isotropic 切替 (n_dims > 10) でも fit が通る

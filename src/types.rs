@@ -68,6 +68,10 @@ pub struct ProposeConfig {
     /// local GP の学習点数。0 = 自動 (max(50, n_dims + 2))。
     #[serde(default)]
     pub phase2_local_points: usize,
+    /// Phase 2 GP の長さスケールに次元スケール LogNormal 事前 (Hvarfner 2024) を課す。
+    /// デフォルト false で既存挙動 (MLE) と完全一致。
+    #[serde(default)]
+    pub phase2_ls_prior: bool,
 }
 
 fn default_n_trs() -> usize {

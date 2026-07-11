@@ -65,9 +65,16 @@ source ~/.cargo/env && cargo test --release   # Rust 35テスト
 - ノイズ耐性TR成功閾値: 比1.004(効果なし) / ランク重み+平滑化CEM: 1.021(悪化)
 - TR×√D多様性半径: 0.999(選択結果ほぼ不変) / n_init 50→20: 1.045(悪化)
 - コヒーレント単一メンバーTS: **1.375(大幅悪化)** — "ts"の乱択ばらつき自体が探索に効いている
+- Phase2 GPのLogNormal長さスケール事前(Hvarfner 2024, `phase2_ls_prior`フラグとして実装済み・
+  デフォルトoff): 比0.996(効果なし、8勝/128、Phase2発火45/128) — 2026-07-11に棄却。
+  局所残差GPには論文前提(グローバル高次元GP)が当てはまらない。詳細 BENCHMARK.md §14.1
 
-未着手の有望案: Phase2マイクロGPへの次元スケールLogNormal長さスケール事前分布(Hvarfner 2024)、
-実CFD(NeuralFoil/SU2)でのts再検証、SAASBO比較。
+**実CFDでのts再検証(2026-07-11)**: NeuralFoil CST 16D(Cl/Cd)では**EIがTSに明確勝利**
+(ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。合成多峰関数と逆転 — TSの探索ボーナスは
+多峰性問題限定。デフォルトは"ts"のままだが、**滑らかな実CFD系では acquisition="ei" 推奨**。
+詳細 BENCHMARK.md §14.2
+
+未着手の有望案: SAASBO比較、SU2(実RANS)でのts/ei確認。
 
 ## 落とし穴・不変条件
 

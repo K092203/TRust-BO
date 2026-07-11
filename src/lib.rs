@@ -255,8 +255,13 @@ impl Engine {
                 .collect();
 
             let mut gp_rng = StdRng::seed_from_u64(seed.wrapping_add(0x9e37_79b9));
-            if let Ok(micro) = gp::fit_micro_gp(&xs_local, &residuals, &mut gp_rng) {
-                let l_frozen = tr_states[0].side_length.max(0.02);
+            let l_frozen = tr_states[0].side_length.max(0.02);
+            // 事前分布の位置は TR 辺長でシフト (gp.rs のドキュメント参照)
+            let ls_prior_shift =
+                config.phase2_ls_prior.then(|| (l_frozen as f64).ln());
+            if let Ok(micro) =
+                gp::fit_micro_gp_opts(&xs_local, &residuals, &mut gp_rng, ls_prior_shift)
+            {
                 let half = l_frozen / 2.0;
                 let lo: Vec<f32> =
                     global_best_params.iter().map(|c| (c - half).max(0.0)).collect();

@@ -648,3 +648,38 @@ H-2 の単目的（Cl/Cd 最大化）を 2 目的（Cl 最大化 + Cd 最小化�
 - 非物理アーティファクト（§12.5）の対策（最小厚み・面積制約）は MO でも同様に必要。
 - **合格基準 K-2「実 CFD の Pareto フロントで意味のある揚抗トレードオフ」**: Chebyshev で
   4–5 点の単調な Cl–Cd トレードオフを確認、達成。
+
+## 14. 2026-07-11: Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B
+
+### 14.1 Phase 2 マイクロ GP の LogNormal 長さスケール事前（棄却）
+
+- 内容: `phase2_ls_prior` フラグで Phase 2 マイクロ GP のハイパラ推定を MLE → MAP 化。
+  事前 ls ~ LogNormal(μ, σ²), μ = ln(TR辺長) + √2 + 0.5·ln d, σ = √3
+  （Hvarfner et al. 2024 / BoTorch 参照実装の論文値を TR 局所座標へ平行移動）。
+  候補サンプリング範囲も [μ−2σ, μ+2σ] にシフト。
+- 設定: Ackley/Rastrigin/Rosenbrock/Levy × {50,100}D × ノイズ {0,5%} × 8 seeds、
+  budget 250、batch 4、`enable_phase2=True`。ハーネス: `benchmarks/lsprior_ab_benchmark.py`、
+  出典: `lsprior_ab_results.csv`。
+- 結果: 最終リグレット幾何平均比 baseline/lsprior = **0.996**（事前あり側が僅かに悪化）、
+  lsprior 勝ち 8/128。条件別も 0.972–1.003 で全て誤差範囲。
+  Phase 2 は 45/128 run で発火しており「発火しなかったから差なし」ではない。
+- 判定: **棄却**。フラグはコードに残す（デフォルト off、ビット一致確認済み）が採用しない。
+  解釈: Phase 2 GP は TR 内残差の局所モデルで学習点も少なく、事前の恩恵が出る
+  グローバル・高次元 GP という論文の前提と状況が異なる。
+
+### 14.2 NeuralFoil（実 CFD 代替）での acquisition "ts" vs "ei"（EI 優位）
+
+- 内容: 2026-07 に合成関数で採用した TS デフォルトを、実 CFD 様応答面で再検証。
+- 設定: CST 16D 翼型 Cl/Cd 最大化（α=4°, Re=3e6, feasibility 制約つき）、budget 200、
+  batch 4、ノイズ {0, 5%乗算} × 8 seeds、`enable_phase2=True`。
+  ハーネス: `benchmarks/cfd_ts_ab_benchmark.py`、出典: `cfd_ts_ab_results.csv`。
+- 結果（真値 best Cl/Cd）:
+
+| noise | ts 平均 | ei 平均 | ts/ei 幾何平均 | ts 勝敗 |
+|-------|---------|---------|----------------|---------|
+| 0%    | 202.2   | 222.3   | **0.916**      | 2勝6敗  |
+| 5%    | 166.7   | 191.9   | **0.862**      | 2勝6敗  |
+
+- 判定: **滑らかで単峰性の強い実 CFD 様問題では EI が明確に優位**（合成多峰関数とは逆転）。
+  TS の乱択ばらつきによる探索ボーナスは多峰性問題でのみ効く。
+  デフォルトは "ts" のまま維持するが、CFD 系の実務では `acquisition="ei"` を推奨。
