@@ -4,6 +4,9 @@ TRust-BO = **Rust製トラスト領域ベイズ最適化エンジン**(PyO3でPy
 CFDなど高価な評価関数の設計最適化で、高次元(50–100D+)・ノイズあり・制約ありに強い。
 GPではなく **MLPブートストラップ・アンサンブルが主サロゲート** である点が最大の特徴。
 
+現在バージョン: **v0.2.0**(2026-07-11、PyPI公開済み。`pip install trust-bo==0.2.0`)。
+v0.1.0→v0.2.0差分は CHANGELOG.md `[0.2.0]` 節が正。
+
 ## アーキテクチャ(3行)
 
 - **Rust側は完全ステートレス**: `Engine.propose()` が全履歴+状態JSONを毎回受け取り、候補+更新状態JSONを返す。
@@ -89,6 +92,10 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 - EI停滞検出(Phase2遷移シグナル)は acquisition="ei" 限定。デフォルト"ts"では tr_exhausted のみが引き金
 - 値は最大化方向に統一してRustへ渡る(minimizeはPython側で符号反転)。入力は[0,1]エンコード済み前提
 - debugビルドはu64オーバーフローで壊れる既知問題 → 常に --release
+- **`v*` タグをpushすると`.github/workflows/release.yml`が自動発火**し、PyPI公開+GitHub Release
+  作成まで人手を介さず進む(`pypi`環境にreviewer承認ゲートなし)。バージョンを上げる作業自体
+  (pyproject.toml/Cargo.toml/CHANGELOG.md)はローカルで完結する安全な変更だが、
+  タグの作成・pushは必ずユーザーの明示的な確認を経てから行うこと
 
 ## ドキュメント(深掘り用)
 
