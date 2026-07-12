@@ -5,12 +5,66 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-13
+
 ### Removed
 
 - Removed the deprecated sklearn-based `TandemEngine` / `TandemEngineV2`,
   the `legacy-tandem` extra, and their obsolete benchmark scripts. The native
   Rust residual Micro-GP (`config={"enable_phase2": True}`) is the supported
-  replacement. This removal will be released in v0.3.0.
+  replacement.
+
+### Changed
+
+- **`phase2_early_frac` now defaults to `0.25` when `enable_phase2=True`**
+  (previously `0.0`, i.e. disabled). Validated on both NeuralFoil (16 paired
+  conditions) and real SU2 RANS (3 seeds): under `acquisition="ei"` the
+  change is a no-op (the EI-stagnation Phase 2 trigger always fires first,
+  so trajectories are bit-identical either way); under `acquisition="ts"`
+  it improves the synthetic-suite regret geometric mean by ~1.37x. Pass
+  `config={"phase2_early_frac": 0.0}` explicitly to restore the old
+  behavior.
+- SU2 benchmark harness (`benchmarks/su2/su2_runner.py`): the fixed
+  `cd <= 1e-6` non-physicality check is replaced by a configurable
+  `SU2Settings.min_cd` (default `1e-3`), closing a gap where a
+  Cl/Cd=561 artifact slipped through the old threshold.
+
+### Added
+
+- `config={"acquisition": "ts_ei"}` (single-TR only): selects the first
+  `ceil(batch_size/2)` of each batch by EI and the rest by TS, and enables
+  the EI-stagnation Phase 2 trigger. Not a universal default (loses to
+  `"ei"`/`"ts"` on several conditions), but the best-performing arm on
+  noisy CFD-like problems (+9% over `"ei"` at 5% noise on NeuralFoil) --
+  kept as a situational flag.
+- `config={"sigma_calibration": True}` (default `False`): post-hoc
+  temperature-scaling calibration of the MLP ensemble's predictive standard
+  deviation, fit on a held-out slice of the training data (shrinkage
+  disallowed, clamped to `[1.0, 5.0]`). Evaluated on the synthetic suite
+  under `acquisition="ts"` and found to have no measurable effect (regret
+  ratio 1.008, within noise) -- kept behind the flag, off by default, as a
+  recorded negative result.
+- `config={"cem_dim_mask": True}` (default `False`): RAASP-style
+  dimension masking for the global CEM sampler (Papenmeier et al., ICML
+  2025). Evaluated on the 70%-evaluation-reduction goal suite and found to
+  have no benefit over the trust region's existing locality (ei-ratio
+  0.971, kept behind the flag for reference).
+- `config={"bilog_transform": True}` (default `False`): sgn(v)*ln(1+|v|)
+  output transform before surrogate normalization (SCBO/HEBO-style outlier
+  damping). Evaluated on the synthetic suite and found to hurt (regret
+  ratio 0.881 overall, 0.634 on Rosenbrock) -- kept behind the flag, off
+  by default, as a recorded negative result rather than removed.
+- `benchmarks/su2/airfoil_mesh.py::validate_cst_geometry`: fail-fast CST
+  geometry constraints (max thickness ratio, section area, no
+  upper/lower-surface crossing) applied before mesh generation and SU2
+  execution.
+- `python.trust_bo.CascadeMFEngine` (from the prior release cycle):
+  documented finding that neither NeuralFoil nor coarse-mesh SU2 passes
+  the low/high-fidelity correlation gate for the SU2 objective (R^2=0.28
+  and R^2=0.45 respectively, against a 0.75 threshold) -- the engine
+  remains useful for same-surrogate-family cascades (e.g. NeuralFoil
+  model-size tiers) but is not recommended for NeuralFoil/coarse-mesh to
+  full SU2 RANS cascading as currently configured.
 
 ## [0.2.0] - 2026-07-11
 

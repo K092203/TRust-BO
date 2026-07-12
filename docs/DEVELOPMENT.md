@@ -718,7 +718,7 @@ HEBO: 10D=0.100 (GPサロゲート特性が出る); 50D/100D=too_slow
 | phase 状態機械 | `enable_phase2`（default off）/ sticky local / `phase2_min_evals`（3×n_init）ガード / TR凍結契約 |
 | batch保証 | local/fallback 双方で backfill により常に batch_size 件返却 |
 | `branin_demo` | `#[path]` で本番 gp.rs を検証。**best=0.397888（真値 0.397887、誤差1e-6）** |
-| sklearn 排除 | 旧 TandemEngine/V2 は DeprecationWarning + `legacy-tandem` extra に分離（v0.2で削除予定） |
+| sklearn 排除 | 旧 TandemEngine/V2 は DeprecationWarning + `legacy-tandem` extra に分離(実際は v0.3.0 で削除、CHANGELOG.md参照) |
 
 **benchmark_native.py 結果（3 seeds 中央値）**
 

@@ -120,6 +120,7 @@ impl Engine {
             config.epochs,
             config.learning_rate,
             warm_states,
+            config.sigma_calibration,
         );
 
         // feasibility surrogate: infeasible データがある場合に訓練 (ウォームスタート対応)
@@ -142,6 +143,7 @@ impl Engine {
                     config.epochs,
                     config.learning_rate,
                     feas_warm,
+                    false, // feasibility は分類なので温度スケーリング校正の対象外
                 );
                 (Some(ens), states)
             } else {
@@ -437,6 +439,7 @@ impl Engine {
         let job_ensembles: Vec<surrogate::Ensemble> = (0..cem_jobs.len())
             .map(|_| surrogate::Ensemble {
                 members: ensemble.members.clone(),
+                sigma_scale: ensemble.sigma_scale,
             })
             .collect();
         let job_results: Vec<(usize, Vec<Vec<f32>>)> = cem_jobs
@@ -739,11 +742,11 @@ impl Engine {
 
         let (ens0, _, states0) = surrogate::Ensemble::train(
             &feasible_params, &norm0, config.n_dims, config.ensemble_size,
-            seed, config.epochs, config.learning_rate, warm(0),
+            seed, config.epochs, config.learning_rate, warm(0), false,
         );
         let (ens1, _, states1) = surrogate::Ensemble::train(
             &feasible_params, &norm1, config.n_dims, config.ensemble_size,
-            seed.wrapping_add(0x51_2a_7f), config.epochs, config.learning_rate, warm(1),
+            seed.wrapping_add(0x51_2a_7f), config.epochs, config.learning_rate, warm(1), false,
         );
         let ensembles = [ens0, ens1];
 

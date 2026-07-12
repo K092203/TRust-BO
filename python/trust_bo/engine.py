@@ -62,6 +62,12 @@ class TRustBOEngine:
         n_init_val = self._config["n_init"]
         adaptive_l = min(0.8, max(0.3, (5.0 / n_init_val) ** (1.0 / max(n, 1))))
         self._config.setdefault("l_init", adaptive_l)
+        # enable_phase2=True 時は phase2_early_frac のデフォルトを 0.25 に
+        # (v0.3.0、BENCHMARK.md §20.1/20.3 で確定): acquisition="ei" では EI 停滞
+        # シグナルが先行するため無害、"ts" では Phase2 発火率を大幅に改善する。
+        # Rust 側のデフォルトは 0.0 のまま (config で明示すれば従来どおり無効化可能)。
+        if self._config.get("enable_phase2"):
+            self._config.setdefault("phase2_early_frac", 0.25)
 
     # --- public API ---
 

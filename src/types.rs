@@ -85,6 +85,12 @@ pub struct ProposeConfig {
     /// 外れ値を減衰する。TR の best_value (生値) には影響しない。デフォルト false。
     #[serde(default)]
     pub bilog_transform: bool,
+    /// アンサンブルσのpost-hoc校正: 主サロゲート学習時に末尾min(n/5,20)件を
+    /// ホールドアウトし、NLL最小化の閉形式解(温度スケーリング)でpredict()の
+    /// σに掛ける係数[0.2,5.0]を求める。feasibilityサロゲートには適用しない。
+    /// デフォルト false で既存挙動 (sigma_scale=1.0) と完全一致。
+    #[serde(default)]
+    pub sigma_calibration: bool,
 }
 
 fn default_n_trs() -> usize {
