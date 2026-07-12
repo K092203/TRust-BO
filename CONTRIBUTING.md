@@ -20,8 +20,6 @@ PRs are welcome. Start small — a typo fix or a single bug fix is a great first
    maturin develop --release
    pytest tests/ -q
    ```
-   (`scipy` / `scikit-learn` are only needed while the deprecated
-   `TandemEngine` is still bundled — it will be removed in v0.2.)
 
 ## Code style
 

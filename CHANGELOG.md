@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- Removed the deprecated sklearn-based `TandemEngine` / `TandemEngineV2`,
+  the `legacy-tandem` extra, and their obsolete benchmark scripts. The native
+  Rust residual Micro-GP (`config={"enable_phase2": True}`) is the supported
+  replacement. This removal will be released in v0.3.0.
+
 ## [0.2.0] - 2026-07-11
 
 ### Changed
@@ -75,5 +82,5 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Deprecated
 
 - `TandemEngine` / `TandemEngineV2` (sklearn-based Phase 2). Use
-  `TRustBOEngine(config={"enable_phase2": True})` instead. The old classes
-  remain available behind the `legacy-tandem` extra and will be removed in v0.2.
+  `TRustBOEngine(config={"enable_phase2": True})` instead. The old classes remained available behind the `legacy-tandem` extra; their
+  originally planned v0.2 removal is completed in the Unreleased v0.3 changes.

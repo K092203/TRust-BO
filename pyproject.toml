@@ -35,10 +35,6 @@ Repository = "https://github.com/K092203/TRust-BO"
 Issues = "https://github.com/K092203/TRust-BO/issues"
 Changelog = "https://github.com/K092203/TRust-BO/blob/main/CHANGELOG.md"
 
-[project.optional-dependencies]
-# 旧 sklearn ベース TandemEngine/V2 用 (deprecated、v0.2 で削除予定)
-legacy-tandem = ["scikit-learn", "scipy"]
-
 [tool.maturin]
 bindings = "pyo3"
 module-name = "trust_bo._lib"
