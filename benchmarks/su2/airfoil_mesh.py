@@ -59,6 +59,52 @@ def cst_coords(w_upper: np.ndarray, w_lower: np.ndarray, n_half: int = 100,
     return x, yu, x, yl
 
 
+def cst_geometry_metrics(w_upper: np.ndarray, w_lower: np.ndarray,
+                         n_points: int = 401) -> dict:
+    """Return deterministic thickness metrics for a CST airfoil."""
+    if n_points < 3:
+        raise ValueError("n_points must be at least 3")
+    x, yu, _, yl = cst_coords(
+        w_upper, w_lower, n_half=n_points
+    )
+    thickness = yu - yl
+    dx = x[1:] - x[:-1]
+    area = float(np.sum(0.5 * (thickness[:-1] + thickness[1:]) * dx))
+    return {
+        "max_thickness": float(np.max(thickness)),
+        "area": area,
+        "min_internal_thickness": float(np.min(thickness[1:-1])),
+    }
+
+
+def validate_cst_geometry(
+    w_upper: np.ndarray,
+    w_lower: np.ndarray,
+    *,
+    min_max_thickness: float = 0.06,
+    min_area: float = 0.05,
+    crossing_tol: float = 1e-10,
+    n_points: int = 401,
+) -> tuple[bool, dict, str | None]:
+    """Validate basic physical CST geometry before mesh generation or CFD."""
+    wu = np.asarray(w_upper, dtype=float)
+    wl = np.asarray(w_lower, dtype=float)
+    if wu.ndim != 1 or wl.ndim != 1 or wu.size == 0 or wu.size != wl.size:
+        return False, {}, "invalid_weights"
+    if not (np.all(np.isfinite(wu)) and np.all(np.isfinite(wl))):
+        return False, {}, "nonfinite_geometry"
+    metrics = cst_geometry_metrics(wu, wl, n_points)
+    if not all(np.isfinite(value) for value in metrics.values()):
+        return False, metrics, "nonfinite_geometry"
+    if metrics["min_internal_thickness"] <= crossing_tol:
+        return False, metrics, "surface_crossing"
+    if metrics["max_thickness"] < min_max_thickness:
+        return False, metrics, "max_thickness"
+    if metrics["area"] < min_area:
+        return False, metrics, "section_area"
+    return True, metrics, None
+
+
 def naca00xx_weights() -> tuple[np.ndarray, np.ndarray]:
     """NACA0012 を近似する 8 項 CST 重み(検証用)。
 

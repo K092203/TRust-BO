@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from airfoil_mesh import generate_omesh, mesh_quality, write_su2
+from airfoil_mesh import generate_omesh, mesh_quality, validate_cst_geometry, write_su2
 
 # 環境変数 SU2_RUN / SU2_WORK で上書き可能 (未設定時は従来のパスのまま)
 SU2_RUN_DEFAULT = os.environ.get("SU2_RUN", "/home/k0903/su2/install/bin")
@@ -119,6 +119,8 @@ class SU2Settings:
     first_cell: float = 1.0e-5
     growth: float = 1.18
     te_thickness: float = 0.0
+    min_max_thickness: float = 0.06
+    min_section_area: float = 0.05
     # 実行
     su2_run: str = SU2_RUN_DEFAULT
     n_threads: int = 4
@@ -157,10 +159,21 @@ def run_cst(w_upper, w_lower, aoa: float | None = None,
     if aoa is not None:
         s.aoa = aoa
 
+    t0 = time.perf_counter()
+    valid_geometry, geometry, geometry_error = validate_cst_geometry(
+        np.asarray(w_upper), np.asarray(w_lower),
+        min_max_thickness=s.min_max_thickness,
+        min_area=s.min_section_area,
+    )
+    info: dict = {"workdir": None, "aoa": s.aoa, "geometry": geometry}
+    if not valid_geometry:
+        info["error"] = f"geometry_{geometry_error}"
+        info["elapsed_s"] = time.perf_counter() - t0
+        return 0.0, 0.0, False, info
+
     os.makedirs(s.workroot, exist_ok=True)
     workdir = tempfile.mkdtemp(prefix="su2_", dir=s.workroot)
-    info: dict = {"workdir": workdir, "aoa": s.aoa}
-    t0 = time.perf_counter()
+    info["workdir"] = workdir
     try:
         # 1) メッシュ生成
         try:
