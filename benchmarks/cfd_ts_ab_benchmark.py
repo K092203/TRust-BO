@@ -33,6 +33,11 @@ from cfd_neuralfoil_benchmark import (
 
 
 ARMS = tuple(os.environ.get("ARMS", "ts,ei").split(","))
+# アーム名 → engine config 追加分。未登録名は acquisition 文字列としてそのまま扱う
+ARM_CONFIGS: dict[str, dict] = {
+    "ei_early": {"acquisition": "ei", "phase2_early_frac": 0.25},
+    "ts_early": {"acquisition": "ts", "phase2_early_frac": 0.25},
+}
 NOISES = [0.0, 0.05]
 SEEDS = range(8)
 BUDGET = 200
@@ -69,7 +74,7 @@ def run_trust_bo(arm: str, noise: float, seed: int) -> tuple[float, float]:
         config={
             "n_init": N_INIT,
             "enable_phase2": True,
-            "acquisition": arm,
+            **ARM_CONFIGS.get(arm, {"acquisition": arm}),
         },
     )
     noise_rng = np.random.default_rng(seed)

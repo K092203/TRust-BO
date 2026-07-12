@@ -38,6 +38,11 @@ from su2_cfd_benchmark import (
 )
 
 ARMS = tuple(os.environ.get("ARMS", "ts,ei").split(","))
+# アーム名 → engine config 追加分。未登録名は acquisition 文字列としてそのまま扱う
+ARM_CONFIGS: dict[str, dict] = {
+    "ei_early": {"acquisition": "ei", "phase2_early_frac": 0.25},
+    "ts_early": {"acquisition": "ts", "phase2_early_frac": 0.25},
+}
 SEEDS = range(1 if os.environ.get("SMOKE") else N_SEED)
 CSV_PATH = Path(os.environ.get("AB_CSV", "su2_ts_ab_results.csv"))
 if os.environ.get("SMOKE"):
@@ -65,10 +70,11 @@ def run_arm(arm: str, seed: int) -> tuple[float, int, float]:
              for i in range(N_UPPER)]
     space += [Float(f"l{i}", float(LOWER_LB[i]), float(LOWER_UB[i]))
               for i in range(N_LOWER)]
+    arm_cfg = ARM_CONFIGS.get(arm, {"acquisition": arm})
     engine = TRustBOEngine(
         space=space, direction="maximize", seed=seed,
         config={"n_init": N_INIT, "enable_phase2": True,
-                "batch_size": BATCH, "acquisition": arm},
+                "batch_size": BATCH, **arm_cfg},
     )
     t0 = time.perf_counter()
     evaluated = n_feas = 0

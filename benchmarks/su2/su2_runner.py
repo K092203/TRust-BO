@@ -121,6 +121,10 @@ class SU2Settings:
     te_thickness: float = 0.0
     min_max_thickness: float = 0.06
     min_section_area: float = 0.05
+    # 非物理 CD の下限。Re=3e6 の乱流翼型の物理下限 (~4e-3) に対し余裕側の 1e-3。
+    # 粗メッシュ・未収束で CD が異常に小さく出る「薄翼 CD≈0」型アーティファクト対策
+    # (旧 cd<=1e-6 では Cl/Cd=561 級のケースがすり抜けた — BENCHMARK.md §20.3)。
+    min_cd: float = 1.0e-3
     # 実行
     su2_run: str = SU2_RUN_DEFAULT
     n_threads: int = 4
@@ -231,8 +235,8 @@ def run_cst(w_upper, w_lower, aoa: float | None = None,
             return 0.0, 0.0, False, info
         info["cl"] = cl
         info["cd"] = cd
-        # 物理性チェック: cd>0、有限、揚抗比が異常でない
-        if not (np.isfinite(cl) and np.isfinite(cd)) or cd <= 1e-6:
+        # 物理性チェック: cd>min_cd、有限、揚抗比が異常でない
+        if not (np.isfinite(cl) and np.isfinite(cd)) or cd <= s.min_cd:
             info["error"] = "nonphysical"
             return cl, cd, False, info
         return cl, cd, True, info
