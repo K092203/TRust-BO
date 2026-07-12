@@ -23,6 +23,9 @@ TRust-BO+P2 を BoTorch_TuRBO・HEBO・Random と比較した実験記録。
 14. [rayon 並列化 + 獲得関数デフォルト "ts" 化](#14-2026-07-11-rayon-並列化--獲得関数デフォルトts化コミット-d6a02f5)
 15. [Phase 2 LogNormal 長さスケール事前 + NeuralFoil での獲得関数 A/B](#15-2026-07-11-phase-2-lognormal-長さスケール事前--neuralfoil-での獲得関数-ab)
 16. [SU2 実RANSでの ts/ei 再確認 + ts_ei / phase2_early_frac A/B](#16-2026-07-11-su2-実ransでの-tsei-再確認--獲得関数ミックスphase2早期発火-ab)
+17. [dual TR (n_trs=2) A/B — 棄却](#17-2026-07-12-dual-tr-n_trs2-ab--棄却)
+18. [評価回数70%削減ジョブ (/goal) — MFカスケードで達成(CFD系)](#18-2026-07-12-評価回数70削減ジョブ-goal--mfカスケードで達成cfd系)
+19. [MF-2 相関ゲート — NeuralFoil→SU2 実ペアは不通過](#19-2026-07-12-mf-2-相関ゲート--neuralfoilsu2-実ペアは不通過カスケードab中止)
 
 ---
 
@@ -829,3 +832,37 @@ bilog出力変換(SCBO/HEBO、小)、アンサンブルσ校正(中、要慎重A
 入力拡張MF-MLP(LF予測をサロゲート特徴に注入、中、18.1の発展形)、
 SU2実ペアでのカスケード検証。見送り確定: Gittins獲得関数、LogEI、グローバルGP、
 REIリスタート、PFN系(CPU制約)、SU2早期打ち切り(goal外のwall-clock最適化)。
+
+## 19. 2026-07-12: MF-2 相関ゲート — NeuralFoil→SU2 実ペアは不通過(カスケードA/B中止)
+
+- 目的: §18.1 のカスケード(NeuralFoil同系列ペアで70%削減)が**実ペア**
+  (LF=NeuralFoil xlarge / HF=SU2 RANS)でも成立するかの事前判定。
+  文献基準(§18.4 R1調査): コスト比<0.2 かつ **相関 R²>0.75** が成立条件。
+- 設定: CST 16D、96点(Sobol 64 + LF選抜32)、SU2 ITER=4000、
+  新実装の幾何制約(§19.1)適用済み。ハーネス: `benchmarks/mf_su2_correlation.py`、
+  出典: `mf_su2_correlation.csv`。Codex-onlyセッションで測定、Claude側で生CSVから独立再集計し一致確認。
+
+| 指標 | 実測 | ゲート |
+|---|---|---|
+| feasibleペア | 57/96 | — |
+| **Pearson R²** | **0.284** | >0.75 **不通過** |
+| Spearman ρ | 0.689 | ≥0.75 不通過 |
+| ρ bootstrap 2.5%下限 | 0.48–0.53 | — |
+| feasibility一致率 | 0.66–0.69 | — |
+
+- 判定: **ゲート不通過につきMF-2カスケードA/Bを中止**(見込み約17時間のSU2計算を回避)。
+  NeuralFoil→SU2 は順位相関が中程度(ρ≈0.69)あるものの、値相関が弱く
+  feasibility不一致も31%あり、カスケードの縮小box選定を誤誘導するリスクが大きい。
+- 帰結: §18.1 の「70%削減」は **NeuralFoil同系列の高相関ペア限定**の結果として確定。
+  実SU2最適化への適用は現構成では非推奨。代替経路は ROADMAP MF-2' 参照
+  (LF=SU2粗メッシュ、NeuralFoil校正、相関が低くても残差学習で吸収するMF-3)。
+- 教訓: **高コストA/Bの前に安価な相関ゲートを置く設計が機能した実例**
+  (96点の測定でA/B全体を正しく中止できた)。
+
+### 19.1 SU2 幾何 fail-fast 制約(Issue #3 対応、採用)
+
+- `validate_cst_geometry`(benchmarks/su2/airfoil_mesh.py): 最大厚み比≥0.06、
+  断面積≥0.05、上下面非交差をメッシュ生成前に判定。su2_runner.py は
+  `cd≤1e-6` の非物理チェックも追加(§16.1 で ei が突いた CD≈0 アーティファクト対策)。
+- テスト: tests/test_su2_geometry.py 8件(NACA0012合格・交差/薄翼/小断面の棄却・決定性)。
+  §19 の測定は本制約適用下で実施され、Cl/Cd>300 の非物理値混入はゼロだった。

@@ -51,14 +51,15 @@ Python側(python/trust_bo/, 計~1700行): engine.py(本体+デフォルト設定
 space.py(Float/Int/Categorical→[0,1]エンコード)、history.py(Trial保存、save/load)、
 multiobjective.py(Chebyshevスカラー化、Rust不要)、rolling_engine.py(SLURM等の非同期並列評価)、
 multifidelity.py(CascadeMFEngine: LF→HF 2段カスケード、Float空間限定、Rustコア不変)、
-tandem.py(scipy版Phase2、旧)、integrations/optuna.py(sampler、acquisition="ei"固定)。
+integrations/optuna.py(sampler、acquisition="ei"固定)。
+旧scipy版Phase2(tandem.py)は2026-07-12に削除済み(v0.3.0で公開予定、CHANGELOG参照)。
 
 ## 検証コマンド
 
 ```bash
 source ~/.cargo/env && cargo test --release   # Rust 39テスト
 .venv/bin/maturin develop --release            # ビルド+インストール(~30s)
-.venv/bin/python -m pytest tests/ -q           # Python 71テスト(~6分、要 scipy/sklearn)
+.venv/bin/python -m pytest tests/ -q           # Python 67テスト(65+2skip、~5分、要 scipy/sklearn)
 ```
 ベンチ: benchmarks/midbudget_benchmark.py が合成関数のA/B標準(SMOKE=1で1分スモーク)。
 エンジンA/Bのコツ: 新機能はconfigフラグで入れ、**まずデフォルト挙動のビット一致を確認**してから比較する
@@ -102,11 +103,15 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 **マルチフィデリティ・カスケード(2026-07-12, BENCHMARK.md §18)**: `CascadeMFEngine`
 (python/trust_bo/multifidelity.py, Rustコア不変)を実装・採用。NeuralFoil CST 16D
 (LF=xsmall/HF=xxxlarge)で **HF30評価がHF直接100評価をGM 1.671・8/8勝で上回る =
-評価回数70%削減を品質+67%で達成**(CFD系ユースケース)。ただしLF/HF相関が高い理想ペアでの
-結果 — SU2実ペア検証は未実施。単一忠実度の合成問題では予算75はbase250のGM 0.46止まりで
-**70%削減は不可能と実証**(忠実度軸が唯一の経路)。
+評価回数70%削減を品質+67%で達成**(CFD系ユースケース)。単一忠実度の合成問題では
+予算75はbase250のGM 0.46止まりで**70%削減は不可能と実証**(忠実度軸が唯一の経路)。
+**ただしSU2実ペアは相関ゲート不通過(2026-07-12, §19)**: NeuralFoil xlarge↔SU2は
+R²=0.284・ρ=0.689で文献成立条件(R²>0.75)を大きく下回り、**NeuralFoil→SU2カスケードは
+現構成では非推奨**。カスケードA/Bは中止し約17時間のSU2計算を回避 —
+「高コストA/Bの前に安価な相関ゲート」の設計が機能した実例。
 
-未着手の有望案: SU2実ペアでのカスケード検証、入力拡張MF-MLP(LF予測をサロゲート特徴へ)、
+未着手の有望案: 代替LFペア探索(MF-2': LF=SU2粗メッシュ or NeuralFoil校正)、
+入力拡張MF-MLP(LF予測をサロゲート特徴へ — 低相関でも安全だが利得上限も小)、
 bilog出力変換、アンサンブルσ校正、phase2_early_fracの実CFD検証+v0.3デフォルト化判断、
 SAASBO比較(WSL環境ではメモリ不足で不可)。
 
@@ -133,6 +138,10 @@ PERFORMANCE_ASSESSMENT.md(**正直な性能評価**: 低次元・小予算・滑
 50D+/ノイズ/制約/実CFDで5–10倍速×同等以上の品質が本領) / BENCHMARK.md / ROADMAP.md /
 AI_OPERATIONS.md(マルチエージェント運用の実データ・役割設計の理由・損益の経験則。
 下記規約の根拠データはここ)
+
+**AGENTS.md との分担**: 本ファイル=Claude Codeセッション用、AGENTS.md=Codex単独
+セッション用オンボーディング。内容が意図的に重複しているため、**規約・棄却リスト・
+数値を更新したら両方を同期すること**(片方だけの更新は陳腐化の温床)。
 
 ## セッション開始チェックリスト(ワークフロー再現用)
 

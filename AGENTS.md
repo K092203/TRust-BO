@@ -51,14 +51,15 @@ Python側(python/trust_bo/, 計~1700行): engine.py(本体+デフォルト設定
 space.py(Float/Int/Categorical→[0,1]エンコード)、history.py(Trial保存、save/load)、
 multiobjective.py(Chebyshevスカラー化、Rust不要)、rolling_engine.py(SLURM等の非同期並列評価)、
 multifidelity.py(CascadeMFEngine: LF→HF 2段カスケード、Float空間限定、Rustコア不変)、
-tandem.py(scipy版Phase2、旧)、integrations/optuna.py(sampler、acquisition="ei"固定)。
+integrations/optuna.py(sampler、acquisition="ei"固定)。
+旧scipy版Phase2(tandem.py)は2026-07-12に削除済み(v0.3.0で公開予定、CHANGELOG参照)。
 
 ## 検証コマンド
 
 ```bash
 source ~/.cargo/env && cargo test --release   # Rust 39テスト
 .venv/bin/maturin develop --release            # ビルド+インストール(~30s)
-.venv/bin/python -m pytest tests/ -q           # Python 71テスト(~6分、要 scipy/sklearn)
+.venv/bin/python -m pytest tests/ -q           # Python 67テスト(65+2skip、~5分、要 scipy/sklearn)
 ```
 ベンチ: benchmarks/midbudget_benchmark.py が合成関数のA/B標準(SMOKE=1で1分スモーク)。
 エンジンA/Bのコツ: 新機能はconfigフラグで入れ、**まずデフォルト挙動のビット一致を確認**してから比較する
@@ -102,11 +103,14 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 **マルチフィデリティ・カスケード(2026-07-12, BENCHMARK.md §18)**: `CascadeMFEngine`
 (python/trust_bo/multifidelity.py, Rustコア不変)を実装・採用。NeuralFoil CST 16D
 (LF=xsmall/HF=xxxlarge)で **HF30評価がHF直接100評価をGM 1.671・8/8勝で上回る =
-評価回数70%削減を品質+67%で達成**(CFD系ユースケース)。ただしLF/HF相関が高い理想ペアでの
-結果 — SU2実ペア検証は未実施。単一忠実度の合成問題では予算75はbase250のGM 0.46止まりで
-**70%削減は不可能と実証**(忠実度軸が唯一の経路)。
+評価回数70%削減を品質+67%で達成**(CFD系ユースケース)。単一忠実度の合成問題では
+予算75はbase250のGM 0.46止まりで**70%削減は不可能と実証**(忠実度軸が唯一の経路)。
+**ただしSU2実ペアは相関ゲート不通過(2026-07-12, §19)**: NeuralFoil xlarge↔SU2は
+R²=0.284・ρ=0.689で文献成立条件(R²>0.75)を大きく下回り、**NeuralFoil→SU2カスケードは
+現構成では非推奨**。カスケードA/Bは中止し約17時間のSU2計算を回避。
 
-未着手の有望案: SU2実ペアでのカスケード検証、入力拡張MF-MLP(LF予測をサロゲート特徴へ)、
+未着手の有望案: 代替LFペア探索(MF-2': LF=SU2粗メッシュ or NeuralFoil校正)、
+入力拡張MF-MLP(LF予測をサロゲート特徴へ — 低相関でも安全だが利得上限も小)、
 bilog出力変換、アンサンブルσ校正、phase2_early_fracの実CFD検証+v0.3デフォルト化判断、
 SAASBO比較(WSL環境ではメモリ不足で不可)。
 
@@ -179,3 +183,8 @@ AI_OPERATIONS.md(マルチエージェント運用の実データ・役割設計
   エージェント向け要約は本ファイルのみ、詳細は docs/ 各編へリンクで委ねる
 - **結果は数値で正直に報告**: 改善しなかった案・失敗した実装も数値とともに記録する
   (上の「棄却済み」節がその実践)
+
+
+## Codex-only運用の優先規約(2026-07-12)
+
+Codex内蔵マルチエージェントだけで作業する場合、上記Codex CLI固有の役割・起動形より本節を優先する。rootは設計・コア実装・統合・A/B採否を保持し、サブエージェントは読み取り調査・独立監査を基本とし、定型ハーネス実装のみroot検収を条件に委譲できる。委譲先は4分以内ごとにheartbeatを送り、5分無通信→確認、さらに60秒無応答→中断・回収とする。監査合格前にA/Bを開始せず、事前ゲートとSMOKEを通った対象だけ本走する。詳細はdocs/AI_OPERATIONS.md末尾。
