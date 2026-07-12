@@ -81,6 +81,10 @@ pub struct ProposeConfig {
     /// 高次元での全次元同時摂動による局所性崩壊への対処。デフォルト false で既存挙動。
     #[serde(default)]
     pub cem_dim_mask: bool,
+    /// bilog 出力変換 (SCBO/HEBO): サロゲート学習前の目的値に sgn(v)·ln(1+|v|) を適用し
+    /// 外れ値を減衰する。TR の best_value (生値) には影響しない。デフォルト false。
+    #[serde(default)]
+    pub bilog_transform: bool,
 }
 
 fn default_n_trs() -> usize {

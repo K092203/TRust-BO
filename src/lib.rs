@@ -92,7 +92,17 @@ impl Engine {
         let global_best_val = feasible_values[global_best_idx];
         let global_best_params = &feasible_params[global_best_idx];
 
-        let (norm_values, _, _) = normalize::zscore(&feasible_values);
+        // bilog 変換 (SCBO/HEBO): sgn(v)·ln(1+|v|) で外れ値を減衰してから z-score。
+        // TR の best_value・global_best_val は生値のまま (不変条件)。デフォルト off。
+        let surrogate_values: Vec<f32> = if config.bilog_transform {
+            feasible_values
+                .iter()
+                .map(|&v| v.signum() * (1.0 + v.abs()).ln())
+                .collect()
+        } else {
+            feasible_values.clone()
+        };
+        let (norm_values, _, _) = normalize::zscore(&surrogate_values);
         let best_norm = norm_values[global_best_idx];
 
         // ── 共有サロゲート (全データ使用、TuRBO-M でも単一モデル) ─────────────
