@@ -54,6 +54,12 @@ class TRustBOEngine:
         self._feas_model_states: list = []  # hex-encoded feasibility surrogate weights
         self._phase: str = "global"         # Tandem Phase 2 の sticky 状態
         self._stagnation_count: int = 0     # EI 停滞カウンタ (Rust と往復)
+        self._local_stagnation_count: int = 0
+        self._poll_cycle: int = 0
+        self._poll_mesh: float = 0.0
+        self._local_best_value: float | None = None
+        self._poll_pending: bool = False
+        self._poll_fire_count: int = 0
 
         n = self._space.n_dims
         self._config.setdefault("n_init", max(10, min(2 * (n + 1), 50)))
@@ -94,7 +100,13 @@ class TRustBOEngine:
                   "model_states": self._model_states,
                   "feas_model_states": self._feas_model_states,
                   "phase": self._phase,
-                  "stagnation_count": self._stagnation_count}
+                  "stagnation_count": self._stagnation_count,
+                  "local_stagnation_count": self._local_stagnation_count,
+                  "poll_cycle": self._poll_cycle,
+                  "poll_mesh": self._poll_mesh,
+                  "local_best_value": self._local_best_value,
+                  "poll_pending": self._poll_pending,
+                  "poll_fire_count": self._poll_fire_count}
         seed = _derive_seed(self._seed, self._ask_count)
         self._ask_count += 1
 
@@ -113,6 +125,12 @@ class TRustBOEngine:
         self._feas_model_states = result.get("feas_model_states", [])
         self._phase = result.get("phase", "global")
         self._stagnation_count = result.get("stagnation_count", 0)
+        self._local_stagnation_count = result.get("local_stagnation_count", 0)
+        self._poll_cycle = result.get("poll_cycle", 0)
+        self._poll_mesh = result.get("poll_mesh", 0.0)
+        self._local_best_value = result.get("local_best_value")
+        self._poll_pending = result.get("poll_pending", False)
+        self._poll_fire_count = result.get("poll_fire_count", 0)
         return [self._space.decode(c) for c in result["candidates"]]
 
     def tell(self, candidates: list[dict], results: list[Any]) -> None:
@@ -173,6 +191,12 @@ class TRustBOEngine:
             "feas_model_states": self._feas_model_states,
             "phase": self._phase,
             "stagnation_count": self._stagnation_count,
+            "local_stagnation_count": self._local_stagnation_count,
+            "poll_cycle": self._poll_cycle,
+            "poll_mesh": self._poll_mesh,
+            "local_best_value": self._local_best_value,
+            "poll_pending": self._poll_pending,
+            "poll_fire_count": self._poll_fire_count,
             "space": self._space.to_list(),
         }
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -196,6 +220,12 @@ class TRustBOEngine:
         engine._feas_model_states = meta.get("feas_model_states", [])
         engine._phase = meta.get("phase", "global")
         engine._stagnation_count = meta.get("stagnation_count", 0)
+        engine._local_stagnation_count = meta.get("local_stagnation_count", 0)
+        engine._poll_cycle = meta.get("poll_cycle", 0)
+        engine._poll_mesh = meta.get("poll_mesh", 0.0)
+        engine._local_best_value = meta.get("local_best_value")
+        engine._poll_pending = meta.get("poll_pending", False)
+        engine._poll_fire_count = meta.get("poll_fire_count", 0)
         engine._history = HistoryStore.from_jsonl(jsonl) if jsonl.strip() else HistoryStore()
         engine._rust = _RustEngine()
         return engine

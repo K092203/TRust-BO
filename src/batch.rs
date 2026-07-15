@@ -56,3 +56,144 @@ pub fn greedy_select(
 ) -> Vec<usize> {
     greedy_select_partial(pool, scores, batch_size, eps, &vec![false; pool.len()])
 }
+
+/// アンサンブルメンバーを決定的シナリオ集合とした joint marginal-improvement greedy。
+/// 選択済み候補の予測値でメンバーごとの running best を更新し、候補は再選択しない。
+pub fn joint_greedy_select(
+    pool: &[Vec<f32>],
+    member_preds: &[Vec<f32>],
+    running_best_init: &[f32],
+    feas_weights: Option<&[f32]>,
+    acq_scores: &[f32],
+    batch_size: usize,
+) -> Vec<usize> {
+    const EXCLUSION_RADIUS: f32 = 0.1;
+    assert_eq!(member_preds.len(), running_best_init.len());
+    assert!(member_preds.iter().all(|preds| preds.len() == pool.len()));
+    if let Some(weights) = feas_weights {
+        assert_eq!(weights.len(), pool.len());
+    }
+    assert_eq!(acq_scores.len(), pool.len());
+    // Feasibility probabilityを決定的シナリオのrunning bestへ正しく取り込む
+    // joint近似ではないため、制約ありでは既存の安全なgreedyをそのまま使う。
+    if feas_weights.is_some() {
+        return greedy_select(pool, acq_scores, batch_size, EXCLUSION_RADIUS);
+    }
+    if member_preds.is_empty() {
+        return Vec::new();
+    }
+
+    let mut running_best = running_best_init.to_vec();
+    let mut remaining = vec![true; pool.len()];
+    let mut selected = Vec::with_capacity(batch_size.min(pool.len()));
+
+    while selected.len() < batch_size {
+        let mut best: Option<(usize, f32)> = None;
+        for i in 0..pool.len() {
+            if !remaining[i] {
+                continue;
+            }
+            let score = member_preds
+                .iter()
+                .zip(running_best.iter())
+                .map(|(preds, &incumbent)| (preds[i] - incumbent).max(0.0))
+                .sum::<f32>()
+                / member_preds.len() as f32;
+            // 同点では先に走査した小さい pool index を維持する。
+            if best.map_or(true, |(_, best_score)| score > best_score) {
+                best = Some((i, score));
+            }
+        }
+
+        let Some((idx, _)) = best else { break };
+        selected.push(idx);
+        remaining[idx] = false;
+        for j in 0..pool.len() {
+            if remaining[j] {
+                let dist = pool[idx]
+                    .iter()
+                    .zip(&pool[j])
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                if dist < EXCLUSION_RADIUS {
+                    remaining[j] = false;
+                }
+            }
+        }
+        for (m, incumbent) in running_best.iter_mut().enumerate() {
+            *incumbent = incumbent.max(member_preds[m][idx]);
+        }
+    }
+
+    if selected.len() < batch_size {
+        let mut excluded = vec![false; pool.len()];
+        for &idx in &selected {
+            for j in 0..pool.len() {
+                let dist = pool[idx]
+                    .iter()
+                    .zip(&pool[j])
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                if dist < EXCLUSION_RADIUS {
+                    excluded[j] = true;
+                }
+            }
+        }
+        selected.extend(greedy_select_partial(
+            pool,
+            acq_scores,
+            batch_size - selected.len(),
+            EXCLUSION_RADIUS,
+            &excluded,
+        ));
+    }
+
+    selected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{greedy_select, joint_greedy_select};
+
+    #[test]
+    fn joint_greedy_updates_member_running_best() {
+        let pool = vec![vec![0.0], vec![0.5], vec![1.0]];
+        let member_preds = vec![vec![3.0, 2.4, 0.0], vec![0.0, 2.4, 3.0]];
+        let selected = joint_greedy_select(
+            &pool, &member_preds, &[0.0, 0.0], None, &[3.0, 2.4, 3.0], 2,
+        );
+        // 点1が平均改善最大。更新後は点0/2が同点なので小さいindexの点0。
+        assert_eq!(selected, vec![1, 0]);
+    }
+
+    #[test]
+    fn constrained_joint_uses_existing_greedy_for_threshold_counterexample() {
+        let pool = vec![vec![0.0], vec![0.5], vec![1.0]]; // A, C, B
+        let member_preds = vec![vec![1000.0, 80.0, 90.0]];
+        let acq_scores = vec![510.0, 80.0, 90.0];
+        let selected = joint_greedy_select(
+            &pool,
+            &member_preds,
+            &[0.0],
+            Some(&[0.51, 1.0, 1.0]),
+            &acq_scores,
+            2,
+        );
+        let greedy = greedy_select(&pool, &acq_scores, 2, 0.1);
+        assert_eq!(greedy, vec![0, 2]);
+        assert_eq!(selected, greedy);
+    }
+
+    #[test]
+    fn joint_greedy_excludes_duplicate_coordinates() {
+        let pool = vec![vec![0.0], vec![0.0], vec![1.0]];
+        let member_preds = vec![vec![1.0, 1.0, 0.0]];
+        let selected = joint_greedy_select(
+            &pool, &member_preds, &[0.0], None, &[1.0, 1.0, 0.0], 2,
+        );
+        assert_eq!(selected, vec![0, 2]);
+        assert_ne!(pool[selected[0]], pool[selected[1]]);
+    }
+}

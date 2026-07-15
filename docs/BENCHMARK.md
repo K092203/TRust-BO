@@ -29,6 +29,7 @@ TRust-BO+P2 を BoTorch_TuRBO・HEBO・Random と比較した実験記録。
 20. [P2D / BILOG / MF-2' の検証(残ジョブ消化)](#20-2026-07-12-p2d--bilog--mf-2-の検証残ジョブ消化)
 21. [MF-2' 相関ゲート — SU2粗メッシュも不通過](#21-2026-07-1213-mf-2-相関ゲート--su2粗メッシュも不通過カスケード再開見送り)
 22. [アンサンブルσのpost-hoc校正(CAL)— 棄却](#22-2026-07-13-アンサンブルσのpost-hoc校正cal--棄却)
+23. [実CFDニッチ尖鋭化ジョブ(/goal 70-300%向上)— 候補6/1/9すべて棄却、候補11はゲート不通過](#23-2026-07-1415-実cfdニッチ尖鋭化ジョブgoal-70-300向上-候補619すべて棄却候補11はゲート不通過)
 
 ---
 
@@ -981,3 +982,117 @@ REIリスタート、PFN系(CPU制約)、SU2早期打ち切り(goal外のwall-cl
   σが体系的に過小評価されていないか、TR局所領域では校正の余地が小さい可能性。
   クランプ下限を緩めて縮小方向も試す発展形は、コヒーレントTSの悪化実績を踏まえ
   優先度低(ROADMAP未記載のまま据え置き)。
+
+## 23. 2026-07-14/15: 実CFDニッチ尖鋭化ジョブ(/goal 70-300%向上)— 候補6/1/9すべて棄却、候補11はゲート不通過
+
+**背景**: 「エンジンの一番の得意分野(実CFD形状最適化, SU2 RANS, ei+phase2構成)をさらに
+とがらせる」/goalジョブ。Codex sol 3並列調査(Phase2局所精密化/CEM効率化/制約・ノイズ・
+並列効率)で11候補を抽出し、Codex sol選定で「候補6→1→9のコア実装+候補11(実行速度軸)」
+というスコープを確定(詳細は候補調査ログ、当セッションのscratchpadに保存・非コミット)。
+選定の時点でsol自身が「現実的な期待は評価数20-40%削減・品質10-30%改善、70%以上は
+極めて野心的」と明言していた。
+
+### 実装した3候補(いずれも`#[serde(default)]`でデフォルトfalse、フラグOFFはビット一致確認済み)
+
+- **`cem_diverse_starts`**(候補6, 決定的多様化マルチスタート): CEM多スタート点をTR内
+  top-3(目的値順)から、1位保持+残り2点を価値上位20件プール内の貪欲Farthest-Point選択に
+  変更(`src/lib.rs`, `src/tr.rs::l2_dist`をpub(crate)化して再利用)。
+- **`enable_mads_poll`**(候補1, Opportunistic MADS poll): Phase2(local)でincumbentが
+  3ラウンド連続改善しないと、`poll_cycle`から決定的に選んだ2次元×±方向(最大4点)の
+  coordinate poll候補をGP+EI候補と混ぜる。mesh初期値`l_frozen/4`、失敗ごとに半減
+  (下限1e-4)、**連続発火5回で改善まで一時停止**(後述の監査で追加)。新規往復状態5個
+  (`local_stagnation_count`, `poll_cycle`, `poll_mesh`, `local_best_value`,
+  `poll_fire_count`)を`phase`/`stagnation_count`と同型のパターンでconfig/output/
+  engine.pyのask・save・load全てに追加。
+- **`joint_batch_select`**(候補9, 決定的joint batch選択): グローバル(単一TR・非ts_ei)
+  バッチ選択を、固定半径0.1のgreedyから、アンサンブル5メンバーを決定的シナリオ集合とした
+  joint marginal-improvement greedyに変更可能にした(`Ensemble::predict_members`新設、
+  `batch::joint_greedy_select`新設)。**feasibility surrogateが存在する場合は
+  既存greedyへ完全fallback**(後述の監査で確定、詳細は次節)。
+
+### 監査で検出した実バグ(A/B投入前に2ラウンド修正、xhigh監査の価値を再実証)
+
+sol xhigh監査1回目(申告によりネットワーク制限で外部sol呼び出しが失敗し、Codex内蔵の
+代替監査2本で突合)で以下を検出:
+- 候補9: feasibility加重running_best更新が**数式的に誤り**。反例
+  (A: pred=1000 p_feas=0.1, B: pred=90 p_feas=1.0, C: pred=80 p_feas=1.0で
+  期待値最大の{A,B}でなく{A,C}が選ばれる)を確認。座標重複除外の欠如も検出
+  (旧greedy_selectの半径除外機能の退行)。
+- 候補1: mesh下限(1e-4)到達後、同一poll点集合を無限に再評価しうる
+  (評価効率という/goalの目的に直接反する)。
+
+1回目の修正(閾値方式FEAS_THRESHOLD=0.5でlikely-feasible限定joint選択)は、
+**xhigh監査2回目で「閾値以上でも同型バグが残存(根治していない)」と再指摘**
+(p_feas=0.51の反例で再現)。候補1もmicro-GP fallback時に停止状態がリセットされる
+経路を新規検出。最終的に**「feasibility surrogateが存在する場合は既存greedyへ
+完全fallback」という監査明示の安全策**で確定(数式的に常に正しいが、SU2のような
+制約付き問題ではfeasibility surrogate学習後は実質的にjoint選択が発火しなくなる)。
+候補1はmicro-GP fallback時に候補1関連5状態を変更せず引き継ぐよう修正。
+両修正後、cargo test 44件pass、regressionテスト3件(反例を直接再現)追加、
+bitcheck全一致を独自に再検証。
+
+**教訓**: 閾値ベースの部分修正では数式的な根本原因を消せないことがある
+(RAASP σ収縮、CAL warm-startリークに続く3例目)。「制約ありでは安全な既存経路へ
+完全fallback」という保守的設計が、複雑な部分修正より結果的に速く確実に正しさへ
+到達した。sol xhigh監査は1回では不十分な場合があり、修正→再監査のループを
+閉じるまで粘る価値がある。
+
+### 候補11(BAPI型早期終了)Phase B1: オフラインROCゲート — 不通過
+
+過去のSU2ベンチマークはworkdir削除(`shutil.rmtree`)により反復ごとの残差履歴が
+残っていなかったため、新規にSU2実測200点(CST 16D一様乱数, seed=11001)でラベル付き
+データセットを収集(feasible=77, bad_su2=69, pre_su2_reject=54)。iter=400/600/800の
+早期残差特徴量(log10 RMS残差、直近区間の傾き、CD変化量等)で発散予測のROC分析を実施。
+
+- 最高AUC 0.6915(iter=800, `rms_worst`閾値)。
+- **FPR≤2%かつTPR≥30%を同時に満たす閾値は存在せず**(FPR≤2%での最大TPRは20.3%)。
+- 判定: **ゲート不通過**。候補11のSU2 runner統合(Phase B2)は見送り確定。
+- 懸念: bad_su2の69件中47件はSU2自体の発散でなくPhase B1データ収集用の300秒
+  タイムアウト起因の可能性があり、判別性能を悪化させている可能性がある
+  (独立収集でタイムアウトを分離すれば改善する余地はあるが、今回は採用しない)。
+- `benchmarks/su2/su2_runner.py`に追加した`save_trajectory_path`引数(デフォルトNone
+  で無効)は、他の棄却済みフラグと同じ扱いで残置。監査で検出した例外処理の不備
+  (malformed dataがCFD結果を上書きする問題)は修正済み。
+
+### SU2実測A/B本走: 候補6+9・候補6+9+1・候補1単体、いずれもbaseline未超え
+
+baseline configは`acquisition="ei"+enable_phase2=True+phase2_early_frac=0.25+batch/
+workers=8`(既存`su2_cfd_benchmark.py`はacquisition未指定でデフォルト"ts"になる不備が
+あったため、新規ハーネス`benchmarks/goal2_su2_ab_benchmark.py`を作成)。
+CST 16D、Ma=0.3 Re=3e6 SA、budget=100、**8 paired seeds**、10評価おきのbest-so-far
+軌跡を記録するresumable設計(セッション中の環境再起動でも21/32完了分を保持して再開できた)。
+
+4アーム(baseline / c6c9 / c6c9c1 / c1only)× 8 seeds = 32実行、全て完了。
+
+| アーム | 最終品質 幾何平均比(対baseline) | 品質で勝ったseed数 | baseline最終品質への到達速度で勝ったseed数 |
+|---|---|---|---|
+| c6c9(候補6+9) | 0.806(19%悪化) | 3/8 | 0/8(4/8は期限内未到達) |
+| c6c9c1(候補6+9+1) | 0.784(22%悪化) | 2/8 | 0/8(4/8は期限内未到達) |
+| c1only(候補1単体) | 0.943(6%悪化、ほぼ横ばい) | 1/8 | 0/8(6/8はbaselineと完全一致) |
+
+**24ペア比較(3アーム×8seed)を通じて、評価効率でbaselineに勝った例は1件もなし**
+(evals_to_reach_baseline_finalが1.0未満のケースがゼロ)。
+
+**解釈**:
+- 候補9はfeasibility surrogate学習後は既存greedyへfallbackする安全設計のため
+  ほぼ無寄与(c6c9とc6c9c1の悪化幅がほぼ同一であることが裏付け)。
+- **候補6(決定的多様化マルチスタート)が主な悪化要因**と見られる。候補6を含む
+  c6c9/c6c9c1は明確に悪化するが、含まないc1onlyはbaselineとほぼ同じ(6/8 seedで
+  完全一致)。実CFDで探索の多様性を強める変更が裏目に出るのは、§16の
+  ts(探索性重視)がSU2実RANSでei比0.353まで悪化した現象と同型のパターン。
+- 候補1(MADS poll)は8シード中6シードで一度も有効なpollを発火/成功させず
+  baselineと完全一致。「Phase2局所停滞への保険」という設計意図どおりには機能したが、
+  実際に停滞を打開できるケースが少なかった。
+
+### 総合判定: /goal未達、候補6/1/9はいずれもデフォルト非採用
+
+70%floor(最低)・300%(目標)のいずれにも遠く届かず、そもそも**候補群単体では
+v0.3.0 baselineを上回れない**という明確な負の結果。採否基準(5 seeds中4勝以上、
+主指標の改善が明確)を満たすアームはゼロ。3フラグとも**デフォルトoffで残置**
+(棄却済みフラグとして、bilog_transform等と同じ扱い)。
+
+事前にsolが「70%以上は極めて野心的」と評価していた見立ては正しかった。
+このエンジンは既に実CFDニッチで強い局所最適に近い状態にあり、追加の
+アルゴリズム的介入(特に探索性を強める方向)は総じて逆効果になりやすいことが
+本ジョブで改めて実証された(§17 dual TR、§18.3 RAASP、§20.2 bilog、§22 CALに続く
+5件目・6件目・7件目の棄却)。

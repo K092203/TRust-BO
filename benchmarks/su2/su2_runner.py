@@ -12,6 +12,7 @@ CST 翼型重み → O-mesh 生成 → SU2 RANS 実行 → Cl/Cd パース、を
 from __future__ import annotations
 
 import csv
+import json
 import os
 import shutil
 import subprocess
@@ -153,8 +154,94 @@ def _parse_clcd(history_csv: str) -> tuple[float | None, float | None, int]:
     return cl, cd, len(rows) - 1
 
 
+_TRAJECTORY_ITERS = (0, 25, 50, 100, 150, 200, 300, 400, 600, 800,
+                     1000, 1500, 2000, 3000, 4000)
+
+
+def _json_default(value):
+    """numpy 値を含む info を JSON 化するための変換。"""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    raise TypeError(f"not JSON serializable: {type(value).__name__}")
+
+
+def _json_safe(value):
+    """NaN/Inf を null に置換し、標準準拠 JSON にする。"""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, np.ndarray)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, float) and not np.isfinite(value):
+        return None
+    return value
+
+
+def _read_trajectory(history_csv: str) -> tuple[list[dict], dict | None]:
+    """SU2 history のチェックポイント行と最終行を抽出する。"""
+    try:
+        with open(history_csv, newline="") as f:
+            reader = csv.DictReader(f)
+            rows = [{k.strip().strip('"'): v.strip() for k, v in row.items()}
+                    for row in reader]
+    except OSError:
+        return [], None
+    if not rows:
+        return [], None
+
+    def compact(row: dict) -> dict:
+        result = {}
+        for key, value in row.items():
+            ku = key.upper()
+            if key == "Inner_Iter" or key.startswith("rms[") or ku in {"CD", "CL"}:
+                try:
+                    result[key] = int(float(value)) if key == "Inner_Iter" else float(value)
+                except (TypeError, ValueError):
+                    result[key] = None
+        return result
+
+    by_iter = {int(float(row["Inner_Iter"])): row for row in rows
+               if row.get("Inner_Iter") not in (None, "")}
+    snapshots = [compact(by_iter[i]) for i in _TRAJECTORY_ITERS if i in by_iter]
+    last = compact(rows[-1])
+    if not snapshots or snapshots[-1].get("Inner_Iter") != last.get("Inner_Iter"):
+        snapshots.append(last)
+    return snapshots, last
+
+
+def _append_trajectory(path: str, w_upper, w_lower, info: dict,
+                       feasible: bool, history_csv: str | None = None) -> None:
+    """1 run の軌跡を JSONL に追記する（並列時は worker ごとに別 path を使う）。"""
+    snapshots, final_history = _read_trajectory(history_csv) if history_csv else ([], None)
+    record = _json_safe({
+        "w_upper": np.asarray(w_upper).tolist(),
+        "w_lower": np.asarray(w_lower).tolist(),
+        "su2_started": bool(history_csv and os.path.exists(history_csv)),
+        "feasible": bool(feasible),
+        "info": info,
+        "snapshots": snapshots,
+        "final_history": final_history,
+    })
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "a") as f:
+        f.write(json.dumps(record, default=_json_default, allow_nan=False) + "\n")
+
+
+def _try_append_trajectory(path: str, w_upper, w_lower, info: dict,
+                           feasible: bool, history_csv: str | None = None) -> None:
+    """軌跡保存を best-effort で行い、評価結果を保存失敗から隔離する。"""
+    try:
+        _append_trajectory(path, w_upper, w_lower, info, feasible, history_csv)
+    except Exception as exc:  # noqa: BLE001 - 計測用 I/O は CFD 結果を上書きしてはならない
+        info.setdefault("trajectory_error", f"{type(exc).__name__}: {exc}")
+
+
 def run_cst(w_upper, w_lower, aoa: float | None = None,
-            settings: SU2Settings | None = None) -> tuple[float, float, bool, dict]:
+            settings: SU2Settings | None = None,
+            save_trajectory_path: str | None = None) -> tuple[float, float, bool, dict]:
     """CST 重みから SU2 RANS を実行し (cl, cd, feasible, info) を返す。
 
     feasible=False は メッシュ不正 / SU2 失敗 / 発散 / 非物理値 を意味する。
@@ -173,6 +260,8 @@ def run_cst(w_upper, w_lower, aoa: float | None = None,
     if not valid_geometry:
         info["error"] = f"geometry_{geometry_error}"
         info["elapsed_s"] = time.perf_counter() - t0
+        if save_trajectory_path is not None:
+            _try_append_trajectory(save_trajectory_path, w_upper, w_lower, info, False)
         return 0.0, 0.0, False, info
 
     os.makedirs(s.workroot, exist_ok=True)
@@ -242,6 +331,13 @@ def run_cst(w_upper, w_lower, aoa: float | None = None,
         return cl, cd, True, info
     finally:
         info["elapsed_s"] = time.perf_counter() - t0
+        if save_trajectory_path is not None:
+            history_csv = os.path.join(workdir, "history.csv")
+            feasible = "error" not in info
+            _try_append_trajectory(
+                save_trajectory_path, w_upper, w_lower, info,
+                feasible=feasible, history_csv=history_csv,
+            )
         # keep_workdir 指定時のみ残す。infeasible/error も含め通常は削除し
         # 本番ベンチ(数千評価)でのディスク逼迫を防ぐ(原因は info["error"] に残る)。
         if not s.keep_workdir:

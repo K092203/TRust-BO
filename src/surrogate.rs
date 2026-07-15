@@ -227,21 +227,8 @@ impl Ensemble {
     }
 
     pub fn predict(&self, candidates: &[Vec<f32>], n_dims: usize) -> (Vec<f32>, Vec<f32>) {
-        let device: <AB as Backend>::Device = Default::default();
         let n = candidates.len();
-        let flat: Vec<f32> = candidates.iter().flat_map(|r| r.iter().copied()).collect();
-
-        let all_preds: Vec<Vec<f32>> = self
-            .members
-            .iter()
-            .map(|m| {
-                let t = Tensor::<AB, 2>::from_data(
-                    TensorData::new(flat.clone(), [n, n_dims]),
-                    &device,
-                );
-                m.forward(t).into_data().to_vec().unwrap()
-            })
-            .collect();
+        let all_preds = self.predict_members(candidates, n_dims);
 
         let k = self.members.len() as f32;
         let means: Vec<f32> = (0..n)
@@ -257,5 +244,24 @@ impl Ensemble {
             .collect();
 
         (means, stds)
+    }
+
+    /// 各アンサンブルメンバーの生予測を返す。
+    /// 外側がメンバー、内側が candidates と同じ順序の予測値。
+    pub fn predict_members(&self, candidates: &[Vec<f32>], n_dims: usize) -> Vec<Vec<f32>> {
+        let device: <AB as Backend>::Device = Default::default();
+        let n = candidates.len();
+        let flat: Vec<f32> = candidates.iter().flat_map(|r| r.iter().copied()).collect();
+
+        self.members
+            .iter()
+            .map(|m| {
+                let t = Tensor::<AB, 2>::from_data(
+                    TensorData::new(flat.clone(), [n, n_dims]),
+                    &device,
+                );
+                m.forward(t).into_data().to_vec().unwrap()
+            })
+            .collect()
     }
 }

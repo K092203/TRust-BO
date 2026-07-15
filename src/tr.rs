@@ -110,7 +110,7 @@ pub fn restart_tr(
 
 // ── TuRBO-M 追加関数 ──────────────────────────────────────────────────────────
 
-fn l2_dist(a: &[f32], b: &[f32]) -> f32 {
+pub(crate) fn l2_dist(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b.iter()).map(|(x, y)| (x - y).powi(2)).sum::<f32>().sqrt()
 }
 

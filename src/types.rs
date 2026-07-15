@@ -76,6 +76,27 @@ pub struct ProposeConfig {
     /// local 遷移を許可する。0.0 (デフォルト) で無効 = 既存挙動 (tr_exhausted / EI停滞のみ)。
     #[serde(default)]
     pub phase2_early_frac: f32,
+    /// Phase 2 停滞時に決定的 coordinate poll を混ぜる。デフォルト false。
+    #[serde(default)]
+    pub enable_mads_poll: bool,
+    /// local phase で incumbent が改善しなかった連続ラウンド数。
+    #[serde(default)]
+    pub local_stagnation_count: usize,
+    /// coordinate poll の次元巡回位置。
+    #[serde(default)]
+    pub poll_cycle: usize,
+    /// coordinate poll の mesh 幅。0.0 は未初期化。
+    #[serde(default)]
+    pub poll_mesh: f32,
+    /// 前回 propose 時の local incumbent (生の最大化方向値)。
+    #[serde(default)]
+    pub local_best_value: Option<f32>,
+    /// 前回返したバッチに poll 点が含まれていたか。
+    #[serde(default)]
+    pub poll_pending: bool,
+    /// incumbent 改善以降の連続 poll 発火回数。5回で改善まで一時停止する。
+    #[serde(default)]
+    pub poll_fire_count: usize,
     /// RAASP 型次元マスク (Xu et al. ICML 2025): グローバル CEM のサンプル生成で
     /// 各次元を確率 min(1, 20/d) でのみ摂動し、残りは CEM 平均に固定する。
     /// 高次元での全次元同時摂動による局所性崩壊への対処。デフォルト false で既存挙動。
@@ -91,6 +112,16 @@ pub struct ProposeConfig {
     /// デフォルト false で既存挙動 (sigma_scale=1.0) と完全一致。
     #[serde(default)]
     pub sigma_calibration: bool,
+    /// CEM多スタート点をTR内top-3(目的値順)ではなく、1位は保持しつつ残り2点を
+    /// 貪欲Farthest-Point選択(価値上位プール内)で選ぶ。多スタートの多様性を高め、
+    /// 探索の縮退を防ぐ。デフォルト false で既存挙動(top-3)と完全一致。
+    #[serde(default)]
+    pub cem_diverse_starts: bool,
+    /// グローバルバッチ選択を「固定半径greedy」から、アンサンブル5メンバーを決定的シナリオ
+    /// 集合とした joint marginal-improvement greedy に置き換える(qEIの離散近似)。
+    /// 単一TR・非ts_ei構成のみ対象。デフォルト false で既存挙動(greedy_select)と完全一致。
+    #[serde(default)]
+    pub joint_batch_select: bool,
 }
 
 fn default_n_trs() -> usize {
@@ -172,4 +203,16 @@ pub struct ProposeOutput {
     /// EI 停滞カウンタ。Python 側が次回 config で返す。
     #[serde(default)]
     pub stagnation_count: usize,
+    #[serde(default)]
+    pub local_stagnation_count: usize,
+    #[serde(default)]
+    pub poll_cycle: usize,
+    #[serde(default)]
+    pub poll_mesh: f32,
+    #[serde(default)]
+    pub local_best_value: Option<f32>,
+    #[serde(default)]
+    pub poll_pending: bool,
+    #[serde(default)]
+    pub poll_fire_count: usize,
 }

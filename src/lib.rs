@@ -20,6 +20,35 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 
+const MAX_CONSECUTIVE_POLL_FIRES: usize = 5;
+
+fn should_fire_poll(enabled: bool, local_stagnation_count: usize, poll_fire_count: usize) -> bool {
+    enabled
+        && local_stagnation_count >= 3
+        && poll_fire_count < MAX_CONSECUTIVE_POLL_FIRES
+}
+
+fn next_poll_fire_count(current: usize, improved: bool, poll_fired: bool) -> usize {
+    if improved {
+        0
+    } else if poll_fired {
+        current.saturating_add(1)
+    } else {
+        current
+    }
+}
+
+fn global_candidate1_state(
+    micro_gp_fallback: bool,
+    input: (usize, usize, f32, Option<f32>, usize),
+) -> (usize, usize, f32, Option<f32>, usize) {
+    if micro_gp_fallback {
+        input
+    } else {
+        (0, 0, 0.0, None, 0)
+    }
+}
+
 #[pyclass]
 pub struct Engine {}
 
@@ -250,6 +279,7 @@ impl Engine {
             tr_states[0] = tr::restart_tr(global_best_params, global_best_val, &config);
         }
 
+        let mut micro_gp_fallback = false;
         if enter_local {
             // 残差 Micro-GP を global best 近傍点でフィット。失敗時は global へフォールバック。
             let n_local = if config.phase2_local_points > 0 {
@@ -288,6 +318,36 @@ impl Engine {
 
             let mut gp_rng = StdRng::seed_from_u64(seed.wrapping_add(0x9e37_79b9));
             let l_frozen = tr_states[0].side_length.max(0.02);
+            // MADS poll 状態はフラグON時だけ更新する。incumbent は生値で比較し、
+            // 直前がpollなら失敗時にmeshを半減する。
+            let improved = config.enable_mads_poll
+                && config
+                    .local_best_value
+                    .map(|prev| global_best_val > prev)
+                    .unwrap_or(true);
+            let (local_stagnation_count, poll_mesh, poll_fire_count) = if config.enable_mads_poll {
+                let count = if improved {
+                    0
+                } else {
+                    config.local_stagnation_count.saturating_add(1)
+                };
+                let initial_mesh = (l_frozen / 4.0).max(1e-4);
+                let mesh = if config.poll_mesh <= 0.0 || improved {
+                    initial_mesh
+                } else if config.poll_pending {
+                    (config.poll_mesh * 0.5).max(1e-4)
+                } else {
+                    config.poll_mesh.max(1e-4)
+                };
+                let fire_count = if improved { 0 } else { config.poll_fire_count };
+                (count, mesh, fire_count)
+            } else {
+                (
+                    config.local_stagnation_count,
+                    config.poll_mesh,
+                    config.poll_fire_count,
+                )
+            };
             // 事前分布の位置は TR 辺長でシフト (gp.rs のドキュメント参照)
             let ls_prior_shift =
                 config.phase2_ls_prior.then(|| (l_frozen as f64).ln());
@@ -334,14 +394,64 @@ impl Engine {
                 let selected =
                     batch::greedy_select(&pool, &acq_scores, config.batch_size, radius);
 
-                let mut candidates: Vec<Vec<f32>> =
-                    selected.iter().map(|&i| pool[i].clone()).collect();
-                let mut out_scores: Vec<f32> =
-                    selected.iter().map(|&i| acq_scores[i]).collect();
-                let mut out_means: Vec<f32> =
-                    selected.iter().map(|&i| pool_means[i]).collect();
-                let mut out_stds: Vec<f32> =
-                    selected.iter().map(|&i| pool_stds[i]).collect();
+                // 改善なしで同じpoll集合を永久再評価しないよう、連続発火は5回で停止する。
+                let poll_fired = should_fire_poll(
+                    config.enable_mads_poll,
+                    local_stagnation_count,
+                    poll_fire_count,
+                );
+                let mut candidates: Vec<Vec<f32>> = Vec::with_capacity(config.batch_size);
+                let mut out_scores: Vec<f32> = Vec::with_capacity(config.batch_size);
+                let mut out_means: Vec<f32> = Vec::with_capacity(config.batch_size);
+                let mut out_stds: Vec<f32> = Vec::with_capacity(config.batch_size);
+
+                if poll_fired && config.n_dims > 0 {
+                    // 2次元×±方向を決定的に巡回する。境界で中心と一致する点と重複は除く。
+                    let n_poll_dims = config.n_dims.min(2);
+                    let mut poll_points = Vec::with_capacity(2 * n_poll_dims);
+                    for offset in 0..n_poll_dims {
+                        let dim = (config.poll_cycle + offset) % config.n_dims;
+                        for sign in [1.0_f32, -1.0_f32] {
+                            let mut point = global_best_params.clone();
+                            point[dim] = (point[dim] + sign * poll_mesh).clamp(0.0, 1.0);
+                            if point != *global_best_params && !poll_points.contains(&point) {
+                                poll_points.push(point);
+                            }
+                        }
+                    }
+                    let (poll_means, poll_stds) =
+                        cem::combined_predict(&ensemble, &micro, &poll_points, config.n_dims);
+                    let mut poll_scores = acquisition::ei(&poll_means, &poll_stds, best_norm);
+                    if let Some(ref feas_surr) = feasibility_ensemble {
+                        let (feas_means, _) = feas_surr.predict(&poll_points, config.n_dims);
+                        for (score, feas) in poll_scores.iter_mut().zip(feas_means) {
+                            *score *= feas.clamp(0.0, 1.0);
+                        }
+                    }
+                    for i in 0..poll_points.len().min(config.batch_size) {
+                        candidates.push(poll_points[i].clone());
+                        out_scores.push(if poll_scores[i].is_finite() {
+                            poll_scores[i]
+                        } else {
+                            f32::MIN
+                        });
+                        out_means.push(poll_means[i]);
+                        out_stds.push(poll_stds[i]);
+                    }
+                }
+
+                // 残りは従来の GP+EI greedy 順で補完する。
+                for &i in &selected {
+                    if candidates.len() >= config.batch_size {
+                        break;
+                    }
+                    if !candidates.contains(&pool[i]) {
+                        candidates.push(pool[i].clone());
+                        out_scores.push(acq_scores[i]);
+                        out_means.push(pool_means[i]);
+                        out_stds.push(pool_stds[i]);
+                    }
+                }
                 let mut bf_rng = StdRng::seed_from_u64(seed.wrapping_add(0xb0f1));
                 while candidates.len() < config.batch_size {
                     candidates.push(
@@ -366,6 +476,24 @@ impl Engine {
                     feas_model_states: new_feas_model_states,
                     phase: "local".to_string(),
                     stagnation_count: config.stagnation_count,
+                    local_stagnation_count,
+                    poll_cycle: if poll_fired {
+                        config.poll_cycle.saturating_add(config.n_dims.min(2))
+                    } else {
+                        config.poll_cycle
+                    },
+                    poll_mesh,
+                    local_best_value: if config.enable_mads_poll {
+                        Some(global_best_val)
+                    } else {
+                        config.local_best_value
+                    },
+                    poll_pending: poll_fired,
+                    poll_fire_count: next_poll_fire_count(
+                        poll_fire_count,
+                        improved,
+                        poll_fired,
+                    ),
                 };
                 return serde_json::to_string(&output)
                     .map_err(|e| PyValueError::new_err(format!("serialization error: {e}")));
@@ -376,6 +504,7 @@ impl Engine {
                 tr_states[0] =
                     tr::restart_tr(global_best_params, global_best_val, &config);
             }
+            micro_gp_fallback = true;
         }
 
         // ── CEM: 各 TR が独立して境界内でサンプリング ───────────────────────────
@@ -412,11 +541,40 @@ impl Engine {
             // スタート点: TR 内の top-3、なければ TR center のみ
             let start_points: Vec<Vec<f32>> = if in_tr_sorted.is_empty() {
                 vec![tr_state.center.clone()]
-            } else {
+            } else if !config.cem_diverse_starts {
                 in_tr_sorted[..3usize.min(in_tr_sorted.len())]
                     .iter()
                     .map(|&i| feasible_params[i].clone())
                     .collect()
+            } else {
+                // 候補6: 1位は保持、残り2点は「価値上位プール」内で貪欲Farthest-Point選択。
+                // プールサイズは in_tr_sorted.len() と 20 の小さい方(計算量を抑えつつ、
+                // 極端に悪い点を候補から除外して縮退を防ぐ)。
+                let pool_size = in_tr_sorted.len().min(20);
+                let pool = &in_tr_sorted[..pool_size];
+                let mut chosen: Vec<usize> = vec![pool[0]]; // 1位(既存の1点目と同じ)
+                let n_starts_target = 3usize.min(pool_size);
+                while chosen.len() < n_starts_target {
+                    let next = pool
+                        .iter()
+                        .filter(|idx| !chosen.contains(idx))
+                        .max_by(|&&a, &&b| {
+                            let da = chosen
+                                .iter()
+                                .map(|&c| tr::l2_dist(&feasible_params[a], &feasible_params[c]))
+                                .fold(f32::INFINITY, f32::min);
+                            let db = chosen
+                                .iter()
+                                .map(|&c| tr::l2_dist(&feasible_params[b], &feasible_params[c]))
+                                .fold(f32::INFINITY, f32::min);
+                            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                        });
+                    match next {
+                        Some(&idx) => chosen.push(idx),
+                        None => break,
+                    }
+                }
+                chosen.iter().map(|&i| feasible_params[i].clone()).collect()
             };
 
             for (k, start_mu) in start_points.iter().enumerate() {
@@ -561,8 +719,25 @@ impl Engine {
                 }
                 selected
             } else {
-                // 後方互換: 既存の greedy_select をそのまま使用
-                batch::greedy_select(&pool, &acq_scores, config.batch_size, 0.1)
+                if config.joint_batch_select {
+                    let member_preds = ensemble.predict_members(&pool, config.n_dims);
+                    let running_best = vec![best_norm; member_preds.len()];
+                    let feas_weights = feasibility_ensemble.as_ref().map(|feas_surr| {
+                        let (means, _) = feas_surr.predict(&pool, config.n_dims);
+                        means
+                    });
+                    batch::joint_greedy_select(
+                        &pool,
+                        &member_preds,
+                        &running_best,
+                        feas_weights.as_deref(),
+                        &acq_scores,
+                        config.batch_size,
+                    )
+                } else {
+                    // 後方互換: 既存の greedy_select をそのまま使用
+                    batch::greedy_select(&pool, &acq_scores, config.batch_size, 0.1)
+                }
             }
         } else {
             // TuRBO-M: スロット飢餓防止
@@ -672,6 +847,22 @@ impl Engine {
             0
         };
 
+        let (
+            global_local_stagnation_count,
+            global_poll_cycle,
+            global_poll_mesh,
+            global_local_best_value,
+            global_poll_fire_count,
+        ) = global_candidate1_state(
+            micro_gp_fallback,
+            (
+                config.local_stagnation_count,
+                config.poll_cycle,
+                config.poll_mesh,
+                config.local_best_value,
+                config.poll_fire_count,
+            ),
+        );
         let output = ProposeOutput {
             candidates: out_candidates,
             tr_states,
@@ -684,6 +875,12 @@ impl Engine {
             feas_model_states: new_feas_model_states,
             phase: "global".to_string(),
             stagnation_count,
+            local_stagnation_count: global_local_stagnation_count,
+            poll_cycle: global_poll_cycle,
+            poll_mesh: global_poll_mesh,
+            local_best_value: global_local_best_value,
+            poll_pending: false,
+            poll_fire_count: global_poll_fire_count,
         };
 
         serde_json::to_string(&output)
@@ -874,6 +1071,12 @@ fn cold_start_output(batch_size: usize, n_dims: usize, seed: u64) -> PyResult<St
         feas_model_states: vec![],
         phase: "global".to_string(),
         stagnation_count: 0,
+        local_stagnation_count: 0,
+        poll_cycle: 0,
+        poll_mesh: 0.0,
+        local_best_value: None,
+        poll_pending: false,
+        poll_fire_count: 0,
     };
     serde_json::to_string(&output)
         .map_err(|e| PyValueError::new_err(format!("serialization error: {e}")))
@@ -883,4 +1086,44 @@ fn cold_start_output(batch_size: usize, n_dims: usize, seed: u64) -> PyResult<St
 fn _lib(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Engine>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod regression_tests {
+    use super::{global_candidate1_state, gp, next_poll_fire_count, should_fire_poll};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
+
+    #[test]
+    fn mads_poll_stops_after_five_fires_until_improvement() {
+        let mut fire_count = 0;
+        let mut fired_rounds = 0;
+        // mesh下限・改善なしを20ラウンド継続する人工シナリオ。
+        for stagnation in 3..23 {
+            let fired = should_fire_poll(true, stagnation, fire_count);
+            fired_rounds += usize::from(fired);
+            fire_count = next_poll_fire_count(fire_count, false, fired);
+            if stagnation >= 8 {
+                assert!(!fired, "上限後はpollなし=GP+EIのみであるべき");
+            }
+        }
+        assert_eq!(fired_rounds, 5);
+        assert_eq!(fire_count, 5);
+        assert_eq!(next_poll_fire_count(fire_count, false, false), 5);
+        assert_eq!(next_poll_fire_count(fire_count, true, false), 0);
+        assert!(!should_fire_poll(true, 0, 0));
+    }
+
+    #[test]
+    fn micro_gp_fit_fallback_preserves_candidate1_stop_state() {
+        let mut rng = StdRng::seed_from_u64(7);
+        let fit = gp::fit_micro_gp_opts(&[vec![0.25, 0.75]], &[1.0], &mut rng, None);
+        assert!(matches!(fit, Err(gp::GpError::TooFewPoints)));
+
+        let input = (8, 10, 1e-4, Some(-0.125), 5);
+        let output = global_candidate1_state(fit.is_err(), input);
+        assert_eq!(output, input);
+        assert_eq!(output.4, 5);
+        assert_eq!(output.3, Some(-0.125));
+    }
 }

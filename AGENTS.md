@@ -4,8 +4,9 @@ TRust-BO = **Rust製トラスト領域ベイズ最適化エンジン**(PyO3でPy
 CFDなど高価な評価関数の設計最適化で、高次元(50–100D+)・ノイズあり・制約ありに強い。
 GPではなく **MLPブートストラップ・アンサンブルが主サロゲート** である点が最大の特徴。
 
-現在バージョン: **v0.2.0**(2026-07-11、PyPI公開済み。`pip install trust-bo==0.2.0`)。
-v0.1.0→v0.2.0差分は CHANGELOG.md `[0.2.0]` 節が正。
+現在バージョン: **v0.3.0**(2026-07-13、PyPI公開済み。`pip install trust-bo==0.3.0`)。
+v0.2.0→v0.3.0差分は CHANGELOG.md `[0.3.0]` 節が正(TandemEngine削除・phase2_early_frac
+既定0.25化・ts_ei/min_cd追加等)。
 
 ## アーキテクチャ(3行)
 
@@ -52,12 +53,12 @@ space.py(Float/Int/Categorical→[0,1]エンコード)、history.py(Trial保存�
 multiobjective.py(Chebyshevスカラー化、Rust不要)、rolling_engine.py(SLURM等の非同期並列評価)、
 multifidelity.py(CascadeMFEngine: LF→HF 2段カスケード、Float空間限定、Rustコア不変)、
 integrations/optuna.py(sampler、acquisition="ei"固定)。
-旧scipy版Phase2(tandem.py)は2026-07-12に削除済み(v0.3.0で公開予定、CHANGELOG参照)。
+旧scipy版Phase2(tandem.py)は2026-07-12に削除済み(v0.3.0で公開済み、CHANGELOG参照)。
 
 ## 検証コマンド
 
 ```bash
-source ~/.cargo/env && cargo test --release   # Rust 39テスト
+source ~/.cargo/env && cargo test --release   # Rust 44テスト
 .venv/bin/maturin develop --release            # ビルド+インストール(~30s)
 .venv/bin/python -m pytest tests/ -q           # Python 67テスト(65+2skip、~5分、要 scipy/sklearn)
 ```
@@ -85,6 +86,24 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 - RAASP型次元マスク(`cem_dim_mask`フラグ、Papenmeier ICML2025のCEM適応): 同予算ei比
   0.971(58勝/128、利得なし) — 2026-07-12に棄却。TRが既に局所性を担保する構成では
   次元マスクの出番がない。初版のσ人工収縮欠陥はsol監査で検出→修正済みの上での判定。詳細 §18.3
+- bilog出力変換(`bilog_transform`フラグ、SCBO/HEBO): base比GM **0.881(12%悪化)**、
+  本命のrosenbrockで**0.634(37%悪化)** — 2026-07-12に棄却。詳細 §20.2
+- アンサンブルσのpost-hoc校正(`sigma_calibration`フラグ、NLL閉形式解、縮小禁止[1.0,5.0]
+  クランプ): base比GM **1.008(誤差範囲)** — 2026-07-13に棄却。詳細 §22
+- **決定的多様化マルチスタート(`cem_diverse_starts`フラグ、候補6)**: CEM多スタートを
+  TR内top-3からFarthest-Point選択へ変更。SU2実RANS 8 seed実測でbaseline比GM
+  **0.806〜0.784(19-22%悪化)**、評価効率でbaselineに勝った例0/8 — 2026-07-15に棄却。
+  実CFDで探索多様性を強める変更が裏目に出るパターン(ts vs ei と同型)。詳細 §23
+- **Opportunistic MADS poll(`enable_mads_poll`フラグ、候補1)**: Phase2局所停滞時の
+  coordinate poll保険。単体ではSU2実RANSでbaseline比GM **0.943(ほぼ横ばい、6/8 seedで
+  完全一致)** — 明確な改善なしのため2026-07-15に棄却。詳細 §23
+- 決定的joint batch選択(`joint_batch_select`フラグ、候補9): アンサンブル5メンバーを
+  決定的シナリオとしたjoint marginal-improvement greedy。監査で数式バグ2件検出・修正の末、
+  **feasibility surrogate存在時は既存greedyへ完全fallback**という安全設計に確定
+  (制約付き問題では実質無寄与)。2026-07-15に棄却。詳細 §23
+- BAPI型早期終了(候補11、SU2発散予測によるwall-clock短縮): オフラインROCゲート
+  (SU2実測200点)で**FPR≤2%かつTPR≥30%を同時に満たす閾値なし**(最大TPR 20.3%) —
+  2026-07-15にゲート不通過でSU2 runner統合見送り。詳細 §23
 
 **実CFDでのts再検証(2026-07-11)**: NeuralFoil CST 16D(Cl/Cd)では**EIがTSに明確勝利**
 (ts/ei幾何平均 0.916/ノイズ5%で0.862、ts 2勝6敗)。SU2実RANS(H-2同条件、3シード)でも
@@ -109,9 +128,25 @@ source ~/.cargo/env && cargo test --release   # Rust 39テスト
 R²=0.284・ρ=0.689で文献成立条件(R²>0.75)を大きく下回り、**NeuralFoil→SU2カスケードは
 現構成では非推奨**。カスケードA/Bは中止し約17時間のSU2計算を回避。
 
-未着手の有望案: 代替LFペア探索(MF-2': LF=SU2粗メッシュ or NeuralFoil校正)、
-入力拡張MF-MLP(LF予測をサロゲート特徴へ — 低相関でも安全だが利得上限も小)、
-bilog出力変換、アンサンブルσ校正、phase2_early_fracの実CFD検証+v0.3デフォルト化判断、
+**SU2実ペアは2種のLF候補とも相関ゲート不通過、カスケード再開見送り確定
+(2026-07-12/13, §19・§21)**: LF=NeuralFoil xlarge(R²=0.284・ρ=0.689)、
+LF=SU2粗メッシュ(SMOKE 8点ではR²=0.859と出たが本走48点で**R²=0.447・ρ=0.423に逆転**)—
+いずれも文献成立条件(R²>0.75)未達。教訓: **相関ゲートはSMOKE規模で確定させず本走
+(n≥30程度)まで判定を待つ**。
+
+**実CFDニッチ尖鋭化ジョブ(2026-07-14/15, BENCHMARK.md §23)— 全面棄却**: 「得意分野の
+性能を70-300%向上」という/goalで、Codex sol調査からコア候補3件(決定的多様化
+マルチスタート/MADS poll/joint batch選択)+実行速度軸(BAPI型早期終了)を選定・実装・
+sol xhigh監査2ラウンド(候補9のfeasibility加重running_best数式誤りを検出→閾値式修正でも
+根治せず→制約時は既存経路へ完全fallbackで確定)を経てSU2実測A/B(8 seed×4アーム×
+budget100)を実施したが、**24ペア比較全てでv0.3.0 baselineに勝てなかった**
+(評価効率で勝った例0件、最終品質も全アームGM<1)。早期終了もROCゲート不通過。
+教訓: このエンジンは実CFDニッチで既に強い局所最適に近く、追加のアルゴリズム的介入
+(特に探索性を強める方向)は総じて逆効果になりやすい。**このジョブの候補6/1/9/11も
+再検証しない**。
+
+未着手の有望案: 忠実度軸を1本に絞った代替LF定義(MF-2'': 反復数のみ削減 or
+境界層解像度保持の粗メッシュ)、入力拡張MF-MLP(低相関でも安全だが優先度低下)、
 SAASBO比較(WSL環境ではメモリ不足で不可)。
 
 ## 落とし穴・不変条件
@@ -171,7 +206,20 @@ AI_OPERATIONS.md(マルチエージェント運用の実データ・役割設計
 - **ハルシネーション対策は多重チェックで担保**: 「実装 ⇔ 独立レビュー ⇔ 実測A/B」の三重化。
   実績: solレビューが実バグ2件(制約付きTSの符号誤り、Box-Muller偏り)を検出、
   ビット一致検証がterraの実装事故(warm path破壊)を検出、sol ultra監査がRAASP初版の
-  σ人工収縮(√p倍/反復)を検出(2026-07-12 — A/B実行中に発覚し測定やり直しで済んだ)
+  σ人工収縮(√p倍/反復)を検出(2026-07-12 — A/B実行中に発覚し測定やり直しで済んだ)。
+  2026-07-15: sol xhigh監査2ラウンドで候補9(joint batch選択)のfeasibility加重
+  running_best数式誤りを検出、**1回目の修正(閾値方式)が根治しておらず2回目監査で
+  再指摘**という実例あり — 監査は1回で済ませず、修正→再監査のループを閉じるまで粘ること
+- **`codex exec`への長大プロンプトはstdinパイプで渡す**: bash heredoc+evalでプロンプトを
+  シェル引数として組み立てると、クォート崩れでcodexがプロンプトを受け取れずstdin待ちの
+  まま`timeout`到達までハングする実績あり(2026-07-14、exit code 124)。
+  `cat prompt.txt | timeout <秒> codex exec -m ... > out.log 2>&1` の形で
+  ファイル経由stdinパイプに統一すること
+- **`-c model_reasoning_effort="xhigh"`の外部sol呼び出しはネットワーク制限で失敗しうる**:
+  失敗時はCodex CLIが内蔵の代替監査に自動フォールバックし、ログにその旨が申告される
+  (2026-07-15に発生)。フォールバック発生時も出力自体は具体的な反例を伴う実用的な
+  監査として機能したが、**「本当に指定モデルが監査したか」をログの申告文で必ず確認**し、
+  重要な判定(A/B投入可否)では独立した2回目の監査で裏取りすること
 - **欠陥版で走ったA/B結果は破棄して再測定**: 監査・レビューで実装欠陥が見つかったら、
   その版で収集済みのA/B行をCSVから削除し(bench_resumeが再実行してくれる)、修正版で
   取り直してから採否判定する。欠陥版の数値で棄却/採用を決めない
