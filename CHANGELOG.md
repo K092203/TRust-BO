@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `config={"cem_diverse_starts": True}` (default `False`): replaces the
+  CEM global multistart's top-3-by-value selection with a farthest-point
+  diversification (1st place kept, remaining 2 picked greedily for
+  distance within the top-20 pool). Evaluated on paired SU2 RANS real-CFD
+  A/B (8 seeds) and found to hurt (final-quality geometric mean 0.806-0.784
+  vs. baseline, zero wins on evaluation-count efficiency) -- kept behind
+  the flag, off by default, as a recorded negative result.
+- `config={"enable_mads_poll": True}` (default `False`): opportunistic
+  MADS-style coordinate polling when Phase 2 (local) stagnates for 3
+  consecutive rounds, capped at 5 consecutive firings. Evaluated
+  standalone on the same SU2 A/B and found to be near-neutral (geometric
+  mean 0.943, matched baseline exactly on 6/8 seeds) -- kept behind the
+  flag as a recorded negative result.
+- `config={"joint_batch_select": True}` (default `False`): deterministic
+  joint marginal-improvement batch selection using the ensemble's members
+  as a fixed scenario set, in place of the fixed-radius greedy selector.
+  Falls back to the existing greedy selector whenever a feasibility
+  surrogate is present (a feasibility-weighted running-best formulation
+  was found to be mathematically unsound during a two-round audit cycle;
+  no correct fix was found that preserved benefit under constraints).
+  Evaluated on the same SU2 A/B and found to add no measurable benefit
+  over `cem_diverse_starts` alone -- kept behind the flag as a recorded
+  negative result.
+- `benchmarks/su2/wing3d_mesh.py`, `benchmarks/su2/wing3d_runner.py`,
+  `benchmarks/wing3d_benchmark.py`: a from-scratch 3-D CFD pipeline
+  (spanwise-extruded, gmsh-free O-mesh; SU2 `INC_RANS`; 65-D spanwise CST
+  parameterization) validating the engine on its originally intended use
+  case, a Formula Student front wing. Not a library API change --
+  internal benchmark tooling, kept for reproducibility. See
+  docs/BENCHMARK.md §24.
+
 ## [0.3.0] - 2026-07-13
 
 ### Removed
@@ -137,4 +170,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `TandemEngine` / `TandemEngineV2` (sklearn-based Phase 2). Use
   `TRustBOEngine(config={"enable_phase2": True})` instead. The old classes remained available behind the `legacy-tandem` extra; their
-  originally planned v0.2 removal is completed in the Unreleased v0.3 changes.
+  originally planned v0.2 removal is completed in the v0.3.0 changes above.

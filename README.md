@@ -259,14 +259,15 @@ Key design choices:
 
 ## Roadmap
 
-### Current (v0.1.x)
-- [x] Single Trust Region (exploitation-focused)
+### Current (v0.3.0)
+- [x] Single Trust Region (exploitation-focused) + TuRBO-M multi-TR (experimental)
 - [x] MLP Bootstrap Ensemble surrogate with warm start
-- [x] Constraint handling (feasibility surrogate)
-- [x] 91-test suite (63 Python + 28 Rust), CPU-only, PyO3 Python bindings
+- [x] Constraint handling (feasibility surrogate) + fail-fast geometric shape constraints for CFD (minimum thickness/area, pre-mesh)
+- [x] 128-test suite (84 Python + 44 Rust), CPU-only, PyO3 Python bindings
 - [x] Benchmark vs BoTorch TuRBO / CMA-ES / HEBO / Random / NSGA-II
 - [x] Native Phase 2 (Rust Tandem Residual-GP): +32% at 50D, +55% at 10D, zero extra deps
 - [x] Async parallel / rolling evaluation (SLURM-ready) for expensive solvers
+- [x] Multi-fidelity cascade (LF→HF, 70% fewer high-fidelity evaluations on NeuralFoil)
 - [x] Real CFD airfoil optimization — NeuralFoil (H-1) **and** SU2 RANS (H-2) pipelines
 - [x] Multi-objective: Chebyshev scalarization + closed-form 2-objective EHVI (Rust)
 - [x] Optuna sampler integration
@@ -274,7 +275,6 @@ Key design choices:
 
 ### Planned
 - [ ] SAASBO comparison + more benchmark seeds (statistical rigor)
-- [ ] Geometric shape constraints for CFD (minimum thickness/area)
 - [ ] Multi-objective beyond 2 objectives
 - [ ] Multi-TR (TuRBO-M) — deprioritized; single TR is more stable at CFD-scale budgets
 - [ ] Research write-up on lightweight BO for engineering design
@@ -315,7 +315,7 @@ engineering design workflows.
 - **Surrogate accuracy vs GP:** The MLP bootstrap ensemble trades uncertainty calibration for speed. On low-dimensional, smooth problems with small budgets, GP-based methods (BoTorch, HEBO) typically do better (confirmed on the 16D NeuralFoil benchmark). TRust-BO's advantage is at 50D+ or on noisy/constrained problems.
 - **Benchmark seeds:** synthetic results use 10 seeds, but real CFD (SU2) uses 3 seeds and multi-objective uses 2 seeds — statistically thin. More seeds are planned.
 - **No SAASBO comparison yet:** the strong high-dimensional BO baseline SAASBO has not been benchmarked against (environment constraints). Claims are limited to vs BoTorch TuRBO / CMA-ES / Random / NSGA-II.
-- **CFD feasibility is simplified:** the SU2 (H-2) pipeline checks only `Cd > 0` and mesh validity, so ultra-thin shapes can yield non-physical Cl/Cd. Geometric constraints (minimum thickness/area) are planned. The NeuralFoil (H-1) pipeline does not have this issue.
+- **CFD feasibility has known gaps:** the SU2 (H-2) pipeline now fail-fasts on invalid geometry (minimum thickness/area, self-intersection) before meshing and rejects non-physical `Cd` below a floor threshold, closing the main artifact class seen earlier (see [docs/BENCHMARK.md](docs/BENCHMARK.md) §20.3). Some residual risk remains on the coarser 3-D front-wing mesh (see below).
 - **Multi-objective is 2-objective for EHVI:** the closed-form EHVI is 2-objective; use Chebyshev scalarization for 3+ objectives.
 - **Warm-start weight transfer:** surrogate weights are serialized as hex strings (~1 MB/round). Functional but inefficient; a binary transfer mechanism is planned.
 - **Multi-TR (`n_trs > 1`) is experimental:** implemented and tested, but deprioritized for CFD-scale budgets where single-TR is more stable.
