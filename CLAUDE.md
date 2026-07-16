@@ -122,7 +122,9 @@ source ~/.cargo/env && cargo test --release   # Rust 44テスト
   **P2D完了(2026-07-12, §20.1/20.3)**: acquisition="ei"ではEI停滞シグナルが先行して発火する
   ため**early_fracは完全に冗長**(NeuralFoil 16ペア+SU2実RANS 3シードで軌道完全一致)=
   ts系専用の補完機能。ei系に副作用ゼロ・ts系に利得のため
-  **v0.3でenable_phase2時デフォルト0.25化を推奨**(ビット挙動が変わるのはts+phase2利用者のみ)
+  **v0.3.0で実装済み: enable_phase2時デフォルト0.25**(ビット挙動が変わるのはts+phase2利用者のみ、
+  `python/trust_bo/engine.py`の`setdefault("phase2_early_frac", 0.25)`)。
+  明示的に`phase2_early_frac=0.0`を指定した場合のみ旧挙動に戻る
 
 **マルチフィデリティ・カスケード(2026-07-12, BENCHMARK.md §18)**: `CascadeMFEngine`
 (python/trust_bo/multifidelity.py, Rustコア不変)を実装・採用。NeuralFoil CST 16D

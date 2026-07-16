@@ -55,10 +55,10 @@ let n_hypers = if n_dims <= 10 {
 | A-4 | 50D/100D の品質が変化しないことを確認 | ✅ 50D: 6.22 / 100D: 7.63（変化なし） |
 | A-5 | `docs/ALGORITHM.md` §12.4 更新 | ✅ |
 
-### 合格基準
-- [ ] `cargo test` 全パス
-- [ ] Ackley 200D / budget=100 の実行時間 < 80s（現状 544s）
-- [ ] 50D/100D の median best_value 変化 ±0.5% 以内
+### 合格基準(達成済み)
+- [x] `cargo test` 全パス
+- [x] Ackley 200D / budget=100 の実行時間 < 80s(旧544s → 現状 **3.8s**、144×高速化)
+- [x] 50D/100D の median best_value 変化 ±0.5% 以内(50D: 6.22 / 100D: 7.63、変化なし)
 
 ---
 

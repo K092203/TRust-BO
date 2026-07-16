@@ -116,10 +116,14 @@ TRust-BO は **Trust Region + MLP Bootstrap Ensemble サロゲート + CEM 最�
   `CLAUDE.md` 参照)
 - **特徴**: TuRBO-M（複数 Trust Region 並列運用）、サロゲートウォームスタート、制約付き最適化
 
+> **以下のファイルマップは Phase 15(2026-06-11)時点のスナップショットであり、行数は
+> 現在の実装と一致しない**(例: `lib.rs` は2026-07の機能追加で1,100行超に増加)。
+> 現行のファイル構成・行数は `CLAUDE.md`「ファイルマップ」節を参照。
+
 ```
 trust-bo/
 ├── src/
-│   ├── lib.rs          # エントリポイント・メインパイプライン (373行)
+│   ├── lib.rs          # エントリポイント・メインパイプライン (373行、Phase 15時点)
 │   ├── types.rs        # データ構造定義                    (67行)
 │   ├── surrogate.rs    # MLP Bootstrap アンサンブル         (202行)
 │   ├── tr.rs           # Trust Region 管理                 (254行)

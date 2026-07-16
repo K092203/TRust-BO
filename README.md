@@ -214,9 +214,10 @@ At 16D smooth, BoTorch leads on median; TRust-BO reaches the single best design.
 
 On the harder, noisier RANS problem TRust-BO leads (+36%) and is the most stable.
 
-> ⚠ **Note on the SU2 (H-2) example:** the feasibility check is currently simple
-> (`Cd > 0` + mesh validity). Ultra-thin shapes can slip through and produce non-physical
-> Cl/Cd (the ⚠ values above). Geometric constraints (minimum thickness/area) are planned.
+> ⚠ **Note on the SU2 (H-2) example:** the ⚠ values above were measured before fail-fast
+> geometric validation (minimum thickness/area, self-intersection) and a `min_cd` floor were
+> added to the SU2 pipeline — they are historical, not reproducible against the current
+> feasibility check (see [Known limitations](#known-limitations)).
 > **For a clean, ready-to-use CFD example, prefer the NeuralFoil (H-1) pipeline.**
 
 ### Multi-objective (Cl ↑ and Cd ↓ simultaneously)
@@ -277,7 +278,7 @@ Key design choices:
 
 ### Planned
 - [ ] SAASBO comparison + more benchmark seeds (statistical rigor)
-- [ ] Multi-objective beyond 2 objectives
+- [ ] Closed-form EHVI beyond 2 objectives (Chebyshev scalarization already supports any objective count today)
 - [ ] Multi-TR (TuRBO-M) — deprioritized; single TR is more stable at CFD-scale budgets
 - [ ] Research write-up on lightweight BO for engineering design
 
@@ -317,7 +318,9 @@ engineering design workflows.
 - **Surrogate accuracy vs GP:** The MLP bootstrap ensemble trades uncertainty calibration for speed. On low-dimensional, smooth problems with small budgets, GP-based methods (BoTorch, HEBO) typically do better (confirmed on the 16D NeuralFoil benchmark). TRust-BO's advantage is at 50D+ or on noisy/constrained problems.
 - **Benchmark seeds:** synthetic results use 10 seeds, but real CFD (SU2) uses 3 seeds and multi-objective uses 2 seeds — statistically thin. More seeds are planned.
 - **No SAASBO comparison yet:** the strong high-dimensional BO baseline SAASBO has not been benchmarked against (environment constraints). Claims are limited to vs BoTorch TuRBO / CMA-ES / Random / NSGA-II.
-- **CFD feasibility has known gaps:** the SU2 (H-2) pipeline now fail-fasts on invalid geometry (minimum thickness/area, self-intersection) before meshing and rejects non-physical `Cd` below a floor threshold, closing the main artifact class seen earlier (see [docs/BENCHMARK.md](docs/BENCHMARK.md) §20.3). Some residual risk remains on the coarser 3-D front-wing mesh (see below).
+- **CFD feasibility has known gaps:** the SU2 (H-2) pipeline now fail-fasts on invalid geometry (minimum thickness/area, self-intersection) before meshing and rejects non-physical `Cd` below a floor threshold, closing the main artifact class seen earlier (see [docs/BENCHMARK.md](docs/BENCHMARK.md) §20.3). Some residual risk remains on the coarser 3-D front-wing mesh used for a from-scratch
+FSAE front-wing validation pipeline (65-D, SU2 `INC_RANS`) — see
+[docs/BENCHMARK.md §24](docs/BENCHMARK.md#24-2026-07-16-3dフロントウィング最適化パイプライン実用検証-成功初の3d-cfd実行).
 - **Multi-objective is 2-objective for EHVI:** the closed-form EHVI is 2-objective; use Chebyshev scalarization for 3+ objectives.
 - **Warm-start weight transfer:** surrogate weights are serialized as hex strings (~1 MB/round). Functional but inefficient; a binary transfer mechanism is planned.
 - **Multi-TR (`n_trs > 1`) is experimental:** implemented and tested, but deprioritized for CFD-scale budgets where single-TR is more stable.

@@ -3,7 +3,9 @@
 > **歴史的記録**: これは Phase 3 時点(2026-06 以前)のアーキテクチャスナップショット。
 > multi-TR(TuRBO-M)、rayon 並列化、Phase 2(Tandem Residual-GP)、多目的 EHVI、
 > 実 CFD パイプライン(NeuralFoil/SU2)は本書執筆後に実装済み。現在のアーキテクチャは
-> `CLAUDE.md` と `docs/DEVELOPMENT.md` を参照。
+> `CLAUDE.md` と `docs/ALGORITHM.md`(アルゴリズム全編)を参照
+> (`docs/DEVELOPMENT.md` は Phase 15 時点で凍結した開発ログであり、現行アーキテクチャの
+> 一次情報源ではない)。
 
 ## 1. 全体構成
 

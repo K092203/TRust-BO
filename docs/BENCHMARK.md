@@ -1,7 +1,11 @@
 # TRust-BO ベンチマーク結果
 
 TRust-BO+P2 を BoTorch_TuRBO・HEBO・Random と比較した実験記録。
-データは 3 つの CSV（計 954 行）を統合した `crossover_summary.csv` に基づく。
+**§1–9(初期の合成関数ベンチ)** は 3 つの CSV(計 954 行)を統合した
+`crossover_summary.csv` に基づく。**§10 以降**は各節ごとに異なる実験
+(NeuralFoil/SU2 RANS実CFD・マルチフィデリティ・goal2・3Dフロントウィング等)を
+扱っており、それぞれの節内で出典CSV/JSONLを個別に明記する
+(スクリプト一覧は`benchmarks/README.md`参照)。
 
 ---
 

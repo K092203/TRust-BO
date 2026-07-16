@@ -191,7 +191,10 @@ choices 間に擬似的な順序が生まれる。one-hot ではないのは次�
 
 ## 4. Rust コア `propose()` のパイプライン全体像
 
-`src/lib.rs` の `propose()` は約 500 行の単一関数で、以下の段階を順に通る:
+`src/lib.rs` の `propose()` は基本フローとして以下の段階を順に通る(2026-06時点の
+初版は約500行だったが、2026-07にearly_frac/MADS poll/diverse starts/joint batch選択等の
+デフォルトoff実験フラグが追加され`src/lib.rs`全体は1100行超に増加。以下はデフォルト構成の
+骨格のみを示す):
 
 ```
 入力: params [n×d], values [n], feasibility [n], TR状態, config, seed
@@ -205,15 +208,19 @@ choices 間に擬似的な順序が生まれる。one-hot ではないのは次�
   │
   ├─ (F) Phase 2 判定:
   │       enable_phase2 && 単一TR && 評価数 ≥ 3×n_init
-  │       && (sticky_local || TR枯渇 || EI停滞≥5)
+  │       && (sticky_local || TR枯渇 || EI停滞≥5 || TR辺長≤l_init×phase2_early_frac)
   │       ──YES→ 残差 Micro-GP fit → local CEM → return (mode="tandem_gp")
   │              (GP fit 失敗時はこの分岐を抜けて global へフォールバック)
   │
   ├─ (G) 各 TR で CEM 実行 → 候補プール生成
-  ├─ (H) 獲得関数（EI/UCB）でプール採点、feasibility で減点
+  ├─ (H) 獲得関数（TS/EI/UCB、デフォルト "ts"）でプール採点、feasibility で減点
   ├─ (I) 多様性付き貪欲選択で batch_size 件選抜
   └─ (J) EI 停滞カウンタ更新 → JSON で return (mode="tr_cem")
 ```
+
+デフォルト off の実験フラグ（`enable_mads_poll`/`cem_diverse_starts`/`joint_batch_select`）は
+上記の基本フローに差し込まれる形で存在するが、いずれも実 CFD A/B で棄却済み
+（CLAUDE.md「棄却済み」節、docs/BENCHMARK.md §23 参照）。デフォルト挙動には影響しない。
 
 **なぜ単一関数か:** パイプラインの各段が前段の中間結果（正規化値・ensemble・
 TR 状態）を共有するため、分割するとデータの受け渡しが煩雑になる。代わりに
@@ -554,9 +561,11 @@ EI(x) = (μ(x) − f_best) Φ(z) + σ(x) φ(z),   z = (μ − f_best)/σ
 
 ### 10.2 UCB（代替）
 
-`UCB(x) = μ(x) + β σ(x)`（β=2.0）。config で選択可能だが、EI がデフォルト
-なのは Phase 2 の遷移シグナル（EI 停滞検出、§12.2）が EI の値域を前提にする
-ためでもある。
+`UCB(x) = μ(x) + β σ(x)`（β=2.0）。config で選択可能。**現行デフォルトは "ts"**
+（2026-07-11、合成多峰関数で EI 比リグレット 10–14% 改善のため変更。実 CFD では
+逆に EI が ts に勝つため `acquisition="ei"` 推奨、詳細は CLAUDE.md 参照）。
+EI は Phase 2 の遷移シグナル（EI 停滞検出、§12.2）の前提となる値域を提供するため、
+`enable_phase2` 使用時は "ei" または "ts_ei" との組み合わせが有効。
 
 ---
 
