@@ -1,0 +1,168 @@
+{
+  "version": 2,
+  "budget": 250,
+  "batch_size": 8,
+  "seed": 0,
+  "protocol_fingerprint": "d1a318f72226373868c75140df6df4fdc45bf9eadd8c8ce3b11e8b350b1d33f5",
+  "protocol": {
+    "iter": 6000,
+    "nthread": 10,
+    "workers": 2,
+    "settings": {
+      "velocity": [
+        11.0,
+        0.0,
+        0.0
+      ],
+      "density": 1.225,
+      "mu": 1.81e-05,
+      "timeout_s": 1800.0,
+      "convergence_window": 2500,
+      "max_cv": 0.15,
+      "max_mean_drift": 0.1,
+      "cauchy_elems": 300,
+      "min_cd": 0.001
+    },
+    "space": {
+      "dim": 65,
+      "baseline": [
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.015,
+        0.02,
+        0.02,
+        0.015,
+        0.008,
+        0.24,
+        0.22,
+        0.2,
+        0.17,
+        0.12,
+        0.65,
+        0.28,
+        0.82,
+        0.025,
+        4.0
+      ],
+      "camber_delta": 0.005,
+      "thickness_scale": [
+        0.85,
+        1.15
+      ],
+      "planform_bounds": [
+        [
+          0.55,
+          0.75
+        ],
+        [
+          0.2,
+          0.35
+        ],
+        [
+          0.65,
+          1.0
+        ],
+        [
+          -0.05,
+          0.08
+        ],
+        [
+          -5.0,
+          15.0
+        ]
+      ]
+    },
+    "su2_binary_sha256": "0b8b343f41a4c441ab9900a597de6d3b56eca688157e3fdfef9d0f1f1ba01b17",
+    "su2_config": "SOLVER= INC_RANS\nKIND_TURB_MODEL= SA\nSA_OPTIONS= NONE\nMATH_PROBLEM= DIRECT\nRESTART_SOL= NO\nINC_DENSITY_MODEL= CONSTANT\nINC_ENERGY_EQUATION= NO\nINC_DENSITY_INIT= 1.225\nINC_VELOCITY_INIT= ( 11.0, 0.0, 0.0 )\nINC_NONDIM= DIMENSIONAL\nVISCOSITY_MODEL= CONSTANT_VISCOSITY\nMU_CONSTANT= 1.81e-05\nFREESTREAM_NU_FACTOR= 3.0\nREF_ORIGIN_MOMENT_X= 0.07\nREF_ORIGIN_MOMENT_Y= 0.0\nREF_ORIGIN_MOMENT_Z= 0.0\nREF_LENGTH= 0.28\nREF_AREA= 0.16562000000000002\nMARKER_HEATFLUX= ( wing, 0.0, endplate, 0.0, ground, 0.0 )\nMARKER_FAR= ( farfield )\nMARKER_SYM= ( symmetry )\nMARKER_PLOTTING= ( wing, endplate, ground )\nMARKER_MONITORING= ( wing, endplate )\nGRID_MOVEMENT= NONE\nSURFACE_MOVEMENT= MOVING_WALL\nMARKER_MOVING= ( ground )\nSURFACE_TRANSLATION_RATE= ( 11.0, 0.0, 0.0 )\nSURFACE_ROTATION_RATE= ( 0.0, 0.0, 0.0 )\nNUM_METHOD_GRAD= WEIGHTED_LEAST_SQUARES\nCFL_NUMBER= 1.0\nCFL_ADAPT= YES\nCFL_ADAPT_PARAM= ( 0.1, 1.5, 0.5, 50.0 )\nITER= 6000\nLINEAR_SOLVER= FGMRES\nLINEAR_SOLVER_PREC= ILU\nLINEAR_SOLVER_ERROR= 1E-6\nLINEAR_SOLVER_ITER= 15\nCONV_NUM_METHOD_FLOW= FDS\nMUSCL_FLOW= YES\nSLOPE_LIMITER_FLOW= VENKATAKRISHNAN\nVENKAT_LIMITER_COEFF= 0.05\nTIME_DISCRE_FLOW= EULER_IMPLICIT\nCONV_NUM_METHOD_TURB= SCALAR_UPWIND\nMUSCL_TURB= NO\nTIME_DISCRE_TURB= EULER_IMPLICIT\nCFL_REDUCTION_TURB= 0.5\nCONV_FIELD= ( LIFT, DRAG )\nCONV_RESIDUAL_MINVAL= -10\nCONV_STARTITER= 300\nCONV_CAUCHY_ELEMS= 300\nCONV_CAUCHY_EPS= 1E-5\nMESH_FILENAME= <mesh>\nMESH_FORMAT= SU2\nSCREEN_OUTPUT= ( INNER_ITER, RMS_PRESSURE, RMS_VELOCITY-X, RMS_NU_TILDE, LIFT, DRAG )\nSCREEN_WRT_FREQ_INNER= 100\nHISTORY_OUTPUT= ( INNER_ITER, RMS_RES, AERO_COEFF )\nCONV_FILENAME= <history>\nOUTPUT_FILES= ( RESTART, CSV )\nOUTPUT_WRT_FREQ= 1000\nWRT_PERFORMANCE= NO\n",
+    "mesh": {
+      "generate_defaults": {
+        "n_half": 41,
+        "nj": 36,
+        "nk": 17,
+        "first_cell": 2e-05,
+        "growth": 1.22,
+        "endplate_j": 20,
+        "domain_bounds": [
+          -0.8,
+          1.2,
+          0.0,
+          0.8
+        ],
+        "endplate_bounds": [
+          -0.1,
+          0.5,
+          0.002,
+          0.25
+        ]
+      },
+      "validator_defaults": {
+        "n_eta": 41,
+        "n_points": 401,
+        "max_surface_rate": 0.2,
+        "max_thickness_rate": 0.15
+      },
+      "wing_height": 0.03,
+      "ground_z": 0.0,
+      "endplate_bounds": [
+        -0.1,
+        0.5,
+        0.002,
+        0.25
+      ],
+      "implementation_sha256": "686e329bbd3fc7549e0c8de16c9bd3c528b26543896bb3d9b1526272c482de75",
+      "airfoil_mesh_sha256": "7ceda544eea5eff94f6fb30e983fc2b2759a3331e37adfa704cbf520da90b57c"
+    },
+    "runner_implementation_sha256": "f3b99878467b343c381694136bde71988d9c2a111751f123ba41fe7f1cd46194",
+    "benchmark_implementation_sha256": "0cd3ebec82ed5fdb598738a6aefbc8ebd4741f1dca1e33b7b3f17909537faf63"
+  },
+  "next_iteration": 32,
+  "pending": null
+}
