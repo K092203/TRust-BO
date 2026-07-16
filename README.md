@@ -1,5 +1,7 @@
 # TRust-BO
 
+**[English](README.md) | [日本語](README.ja.md)**
+
 **Bayesian optimization that runs on the hardware you already have.**
 
 > **TRust-BO is not a CFD solver.** It sits in the optimization loop — it does not
